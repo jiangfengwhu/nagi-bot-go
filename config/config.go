@@ -15,6 +15,10 @@ type Config struct {
 	Database struct {
 		URL string `json:"url"`
 	} `json:"database"`
+	LLM struct {
+		APIKey  string `json:"api_key"`
+		BaseURL string `json:"base_url"`
+	} `json:"llm"`
 }
 
 // Load 从配置文件加载配置
@@ -47,6 +51,11 @@ func (c *Config) Validate() error {
 	// 验证数据库配置
 	if c.Database.URL == "" {
 		return fmt.Errorf("请在配置文件中设置数据库连接 URL")
+	}
+
+	// 验证LLM配置
+	if c.LLM.APIKey == "" {
+		return fmt.Errorf("请在配置文件中设置LLM API密钥")
 	}
 
 	return nil
