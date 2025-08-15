@@ -16,7 +16,7 @@ type Config struct {
 		URL string `json:"url"`
 	} `json:"database"`
 	LLM struct {
-		APIKey  string `json:"api_key"`
+		APIKeys string `json:"api_keys"`
 		BaseURL string `json:"base_url"`
 	} `json:"llm"`
 }
@@ -54,7 +54,7 @@ func (c *Config) Validate() error {
 	}
 
 	// 验证LLM配置
-	if c.LLM.APIKey == "" {
+	if c.LLM.APIKeys == "" {
 		return fmt.Errorf("请在配置文件中设置LLM API密钥")
 	}
 

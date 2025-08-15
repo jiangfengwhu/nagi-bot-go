@@ -6,6 +6,7 @@ import (
 	"jiangfengwhu/nagi-bot-go/bot"
 	"jiangfengwhu/nagi-bot-go/config"
 	"jiangfengwhu/nagi-bot-go/database"
+	"jiangfengwhu/nagi-bot-go/llm"
 )
 
 func main() {
@@ -27,8 +28,11 @@ func main() {
 	}
 	defer db.Close()
 
+	llmService := llm.NewLLMService(cfg)
+	defer llmService.Close()
+
 	// 创建并启动 bot
-	b, err := bot.New(cfg, db)
+	b, err := bot.New(cfg, db, llmService)
 	if err != nil {
 		log.Fatalf("创建 bot 失败: %v", err)
 	}
