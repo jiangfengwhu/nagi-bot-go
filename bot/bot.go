@@ -2,6 +2,7 @@ package bot
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"jiangfengwhu/nagi-bot-go/database"
 	"jiangfengwhu/nagi-bot-go/llm"
 
+	"google.golang.org/genai"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -63,24 +65,35 @@ func (b *Bot) handleChat(c tele.Context) error {
 	if err != nil {
 		return c.Send(fmt.Sprintf("发送消息失败: %v", err))
 	}
-	streamID, err := b.llmService.Chat(c.Message().Text, "gemini-2.5-flash")
-	defer b.llmService.DeleteStream(streamID)
+	ctx := context.Background()
+	chatClient, err := b.llmService.CreateConversation(ctx, "gemini-2.5-flash", nil)
 	if err != nil {
-		return c.Send(fmt.Sprintf("聊天失败: %v", err))
+		return c.Send(fmt.Sprintf("创建聊天失败: %v", err))
 	}
-
-	stream, err := b.llmService.SSE(streamID)
-	if err != nil {
-		return c.Send(fmt.Sprintf("获取流失败: %v", err))
-	}
-
-	llmResult := ""
-	for response := range stream.Stream {
-		llmResult += response.Text()
-		if llmResult != "" {
-			b.Edit(message, llmResult)
+	nextPart := c.Message().Text
+	for nextPart != "" {
+		streamID, err := b.llmService.Chat(ctx, chatClient, nextPart)
+		defer b.llmService.DeleteStream(streamID)
+		nextPart = ""
+		if err != nil {
+			return c.Send(fmt.Sprintf("聊天失败: %v", err))
 		}
-		for _, tool := range response.FunctionCalls() {
+
+		stream, err := b.llmService.SSE(streamID)
+		if err != nil {
+			return c.Send(fmt.Sprintf("获取流失败: %v", err))
+		}
+
+		llmResult := ""
+		toolCalls := []*genai.FunctionCall{}
+		for chunk := range stream.Stream {
+			llmResult += chunk.Text()
+			if llmResult != "" {
+				b.Edit(message, llmResult)
+			}
+			toolCalls = append(toolCalls, chunk.FunctionCalls()...)
+		}
+		for _, tool := range toolCalls {
 			if tool.Name == string(llm.ToolGenerateImage) {
 				c.Send("正在生成图片：" + tool.Args["prompt"].(string))
 				image, err := b.llmService.GenerateImage(tool.Args["prompt"].(string))
@@ -88,6 +101,7 @@ func (b *Bot) handleChat(c tele.Context) error {
 					return c.Send(fmt.Sprintf("生成图片失败: %v", err))
 				}
 				c.Send(&tele.Photo{File: tele.FromReader(bytes.NewReader(image))})
+				nextPart += "图片生成成功\n"
 			}
 		}
 	}

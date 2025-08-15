@@ -43,14 +43,10 @@ func (s *LLMService) getApiKey() string {
 	return apiKeys[rand.Intn(len(apiKeys))]
 }
 
-// Chat 发起对话并生成流，返回流ID
-func (s *LLMService) Chat(prompt string, model string) (string, error) {
+func (s *LLMService) CreateConversation(ctx context.Context, model string, history []*genai.Content) (*genai.Chat, error) {
 	if model == "" {
 		model = "gemini-2.5-flash"
 	}
-
-	// 创建内容
-	contents := genai.Text(prompt)
 
 	// 创建生成内容的配置
 	config := &genai.GenerateContentConfig{
@@ -63,18 +59,26 @@ func (s *LLMService) Chat(prompt string, model string) (string, error) {
 		},
 	}
 
-	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:      s.getApiKey(),
 		HTTPOptions: genai.HTTPOptions{BaseURL: s.baseURL},
 	})
 
 	if err != nil {
-		return "", fmt.Errorf("创建LLMClient失败: %v", err)
+		return nil, fmt.Errorf("创建LLMClient失败: %v", err)
 	}
 
-	// 创建生成内容的流
-	stream := client.Models.GenerateContentStream(ctx, model, contents, config)
+	// 创建chat
+	chat, err := client.Chats.Create(ctx, model, config, history)
+	if err != nil {
+		return nil, fmt.Errorf("创建chat失败: %v", err)
+	}
+
+	return chat, nil
+}
+
+func (s *LLMService) Chat(ctx context.Context, chat *genai.Chat, prompt string) (string, error) {
+	stream := chat.SendMessageStream(ctx, genai.Part{Text: prompt})
 
 	// 生成唯一ID
 	id := uuid.New().String()
@@ -87,7 +91,7 @@ func (s *LLMService) Chat(prompt string, model string) (string, error) {
 
 	s.streams[id] = streamData
 
-	log.Printf("创建聊天流，ID: %s, 模型: %s", id, model)
+	log.Printf("创建聊天流，ID: %s", id)
 	return id, nil
 }
 
