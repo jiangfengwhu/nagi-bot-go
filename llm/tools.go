@@ -8,7 +8,6 @@ import (
 )
 
 func (s *LLMService) GenerateImage(prompt string) ([]byte, error) {
-	fmt.Println("GenerateImage", prompt)
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:      s.getApiKey(),

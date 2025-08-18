@@ -12,13 +12,13 @@ const (
 var ToolsDescMap = map[ToolEnum]*genai.FunctionDeclaration{
 	ToolGenerateImage: {
 		Name:        string(ToolGenerateImage),
-		Description: "生成图片",
+		Description: "根据用户提供的描述，加以完善和补充，使其具有艺术气息，仅在需要生成图片的时候调用",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
 				"prompt": {
 					Type:        genai.TypeString,
-					Description: "图片描述",
+					Description: "根据用户提供的描述完善之后的提示词",
 				},
 			},
 			Required: []string{"prompt"},
