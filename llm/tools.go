@@ -46,7 +46,7 @@ func (s *LLMService) GetTime() string {
 }
 
 func (s *LLMService) GoogleSearch(prompt string) (string, error) {
-	url := "https://www.googleapis.com/customsearch/v1?key=" + s.getGoogleSearchApiKey() + "&cx=92240cc770b9e442b&q=" + url.QueryEscape(prompt)
+	url := "https://expensive-dolphin-32.deno.dev/customsearch/v1?key=" + s.getGoogleSearchApiKey() + "&cx=92240cc770b9e442b&q=" + url.QueryEscape(prompt)
 
 	response, err := http.Get(url)
 	if err != nil {

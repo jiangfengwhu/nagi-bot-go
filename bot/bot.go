@@ -192,7 +192,7 @@ func (b *Bot) handleChat(c tele.Context) error {
 			}
 			tmpResult += chunk.Text()
 			if tmpResult != "" {
-				b.Edit(message, llmResult+tmpResult)
+				b.Edit(message, llmResult+ConvertMarkdownToTelegramMarkdownV2(tmpResult), tele.ModeMarkdownV2)
 			}
 			toolCalls = append(toolCalls, chunk.FunctionCalls()...)
 			promptToken = chunk.UsageMetadata.PromptTokenCount + chunk.UsageMetadata.ThoughtsTokenCount
