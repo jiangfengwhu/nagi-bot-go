@@ -60,3 +60,23 @@ func (db *DB) UpdateUserSystemPrompt(ctx context.Context, tgId int64, systemProm
 	_, err := db.GetPool().Exec(ctx, query, systemPrompt, tgId)
 	return err
 }
+
+func (db *DB) UpdateUserTotalUsedToken(ctx context.Context, tgId int64, usedToken int64) error {
+	query := `
+		UPDATE users
+		SET total_used_token = total_used_token + $1
+		WHERE tg_id = $2
+	`
+	_, err := db.GetPool().Exec(ctx, query, usedToken, tgId)
+	return err
+}
+
+func (db *DB) UpdateUserTotalRechargedToken(ctx context.Context, id int64, rechargedToken int64) error {
+	query := `
+		UPDATE users
+		SET total_recharged_token = total_recharged_token + $1
+		WHERE id = $2
+	`
+	_, err := db.GetPool().Exec(ctx, query, rechargedToken, id)
+	return err
+}

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +58,37 @@ func (b *Bot) setupHandlers() {
 	needAuth.Handle(tele.OnText, b.handleChat)
 	needAuth.Handle(tele.OnPhoto, b.handleChat)
 	needAuth.Handle("/prompt", b.handleSystemPrompt)
+	needAuth.Handle("/c", b.handleRecharge)
+	needAuth.Handle("/my", b.handleMy)
+}
+
+func (b *Bot) handleMy(c tele.Context) error {
+	user := c.Get("db_user").(*database.User)
+	return c.Reply(fmt.Sprintf("您的ID为: %d\n您的余额为: %d\n您的系统提示词为: %s", user.ID, user.TotalRechargedToken-user.TotalUsedToken, user.SystemPrompt))
+}
+
+func (b *Bot) handleRecharge(c tele.Context) error {
+	user := c.Get("db_user").(*database.User)
+	if !slices.Contains(b.config.Bot.AdminIds, user.TgId) {
+		return c.Reply("您没有权限使用此命令")
+	}
+	args := c.Args()
+	if len(args) != 2 {
+		return c.Reply("请输入正确的命令，格式为: /c <id> <amount>")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return c.Reply("请输入正确的id")
+	}
+	amount, err := strconv.ParseInt(args[1], 10, 64)
+	if err != nil {
+		return c.Reply("请输入正确的金额")
+	}
+	err = b.db.UpdateUserTotalRechargedToken(context.Background(), id, amount)
+	if err != nil {
+		return c.Reply(fmt.Sprintf("充值失败: %v", err))
+	}
+	return c.Reply(fmt.Sprintf("充值成功，充值金额为%d个token", amount))
 }
 
 func (b *Bot) handleSystemPrompt(c tele.Context) error {
@@ -89,6 +122,8 @@ func (b *Bot) handleChat(c tele.Context) error {
 	text := c.Message().Text
 	nextParts := []*genai.Part{}
 	llmResult := ""
+	promptToken := int32(0)
+	totalToken := int32(0)
 
 	// === start llm ====
 	ctx := context.Background()
@@ -149,22 +184,31 @@ func (b *Bot) handleChat(c tele.Context) error {
 		toolCalls := []*genai.FunctionCall{}
 		nextParts = []*genai.Part{}
 		tmpResult := ""
-		for chunk := range stream.Stream {
+
+		for chunk, err := range stream.Stream {
+			if err != nil {
+				c.Reply(fmt.Sprintf("获取流失败: %v", err))
+				continue
+			}
 			tmpResult += chunk.Text()
 			if tmpResult != "" {
 				b.Edit(message, llmResult+tmpResult)
 			}
 			toolCalls = append(toolCalls, chunk.FunctionCalls()...)
+			promptToken = chunk.UsageMetadata.PromptTokenCount + chunk.UsageMetadata.ThoughtsTokenCount
+			totalToken += (chunk.UsageMetadata.CandidatesTokenCount + chunk.UsageMetadata.ToolUsePromptTokenCount)
 		}
 		if tmpResult != "" {
 			llmResult += tmpResult
 			b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromText(tmpResult)})
 		}
+		totalToken += promptToken
 		for _, tool := range toolCalls {
 			if tool.Name == string(llm.ToolGenerateImage) {
 				b.Edit(message, llmResult+"\n\n正在生成图片："+tool.Args["prompt"].(string))
 				b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromFunctionCall(tool.Name, tool.Args)})
-				image, err := b.llmService.GenerateImage(tool.Args["prompt"].(string))
+				image, err, token := b.llmService.GenerateImage(tool.Args["prompt"].(string))
+				totalToken += token
 				if err != nil {
 					b.Edit(message, fmt.Sprintf("生成图片失败: %v", err))
 					return nil
@@ -177,6 +221,7 @@ func (b *Bot) handleChat(c tele.Context) error {
 			}
 		}
 	}
+	b.db.UpdateUserTotalUsedToken(ctx, user.TgId, int64(totalToken))
 
 	return nil
 }

@@ -9,9 +9,10 @@ import (
 // Config 配置结构体
 type Config struct {
 	Bot struct {
-		Token               string `json:"token"`
-		Timeout             int    `json:"timeout"`
-		DefaultSystemPrompt string `json:"default_system_prompt"`
+		Token               string  `json:"token"`
+		Timeout             int     `json:"timeout"`
+		DefaultSystemPrompt string  `json:"default_system_prompt"`
+		AdminIds            []int64 `json:"admin_ids"`
 	} `json:"bot"`
 	Database struct {
 		URL string `json:"url"`
