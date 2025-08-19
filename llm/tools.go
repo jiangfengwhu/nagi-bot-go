@@ -7,7 +7,7 @@ import (
 	"google.golang.org/genai"
 )
 
-func (s *LLMService) GenerateImage(prompt string) ([]byte, error, int32) {
+func (s *LLMService) GenerateImage(prompt string) ([]byte, int32, error) {
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:      s.getApiKey(),
@@ -15,7 +15,7 @@ func (s *LLMService) GenerateImage(prompt string) ([]byte, error, int32) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("创建LLMClient失败: %v", err), 0
+		return nil, 0, fmt.Errorf("创建LLMClient失败: %v", err)
 	}
 
 	config := &genai.GenerateContentConfig{
@@ -24,18 +24,18 @@ func (s *LLMService) GenerateImage(prompt string) ([]byte, error, int32) {
 	result, err := client.Models.GenerateContent(ctx, "gemini-2.0-flash-preview-image-generation", genai.Text(prompt), config)
 
 	if err != nil {
-		return nil, fmt.Errorf("生成图片失败: %v", err), 0
+		return nil, 0, fmt.Errorf("生成图片失败: %v", err)
 	}
 
 	for _, part := range result.Candidates[0].Content.Parts {
 		if part.InlineData != nil {
-			return part.InlineData.Data, nil, result.UsageMetadata.TotalTokenCount
+			return part.InlineData.Data, result.UsageMetadata.TotalTokenCount, nil
 		}
 	}
-	return nil, fmt.Errorf("生成图片失败"), 0
+	return nil, 0, fmt.Errorf("生成图片失败")
 }
 
-func (s *LLMService) GetTool(tool ToolEnum) func(prompt string) ([]byte, error, int32) {
+func (s *LLMService) GetTool(tool ToolEnum) func(prompt string) ([]byte, int32, error) {
 	switch tool {
 	case ToolGenerateImage:
 		return s.GenerateImage

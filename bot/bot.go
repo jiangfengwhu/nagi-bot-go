@@ -207,7 +207,7 @@ func (b *Bot) handleChat(c tele.Context) error {
 			if tool.Name == string(llm.ToolGenerateImage) {
 				b.Edit(message, llmResult+"\n\n正在生成图片："+tool.Args["prompt"].(string))
 				b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromFunctionCall(tool.Name, tool.Args)})
-				image, err, token := b.llmService.GenerateImage(tool.Args["prompt"].(string))
+				image, token, err := b.llmService.GenerateImage(tool.Args["prompt"].(string))
 				totalToken += token
 				if err != nil {
 					b.Edit(message, fmt.Sprintf("生成图片失败: %v", err))
