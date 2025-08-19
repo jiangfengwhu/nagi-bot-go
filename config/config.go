@@ -18,8 +18,9 @@ type Config struct {
 		URL string `json:"url"`
 	} `json:"database"`
 	LLM struct {
-		APIKeys string `json:"api_keys"`
-		BaseURL string `json:"base_url"`
+		APIKeys             string `json:"api_keys"`
+		BaseURL             string `json:"base_url"`
+		GoogleSearchAPIKeys string `json:"google_search_api_keys"`
 	} `json:"llm"`
 }
 

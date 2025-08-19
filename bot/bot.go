@@ -206,16 +206,38 @@ func (b *Bot) handleChat(c tele.Context) error {
 		for _, tool := range toolCalls {
 			if tool.Name == string(llm.ToolGenerateImage) {
 				b.Edit(message, llmResult+"\n\n正在生成图片："+tool.Args["prompt"].(string))
-				b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromFunctionCall(tool.Name, tool.Args)})
 				image, token, err := b.llmService.GenerateImage(tool.Args["prompt"].(string))
 				totalToken += token
 				if err != nil {
 					b.Edit(message, fmt.Sprintf("生成图片失败: %v", err))
 					return nil
 				}
+				b.Edit(message, llmResult+"\n\n图片生成完毕，正在发送图片...")
 				c.Reply(&tele.Photo{File: tele.FromReader(bytes.NewReader(image)), Caption: tool.Args["prompt"].(string)})
+				b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromFunctionCall(tool.Name, tool.Args)})
 				nextPart := genai.NewPartFromFunctionResponse(tool.Name, map[string]any{
 					"text": "图片生成成功",
+				})
+				nextParts = append(nextParts, nextPart)
+			} else if tool.Name == string(llm.ToolGetTime) {
+				b.Edit(message, llmResult+"\n\n正在获取时间")
+				time := b.llmService.GetTime()
+				b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromFunctionCall(tool.Name, tool.Args)})
+				nextPart := genai.NewPartFromFunctionResponse(tool.Name, map[string]any{
+					"text": time,
+				})
+				nextParts = append(nextParts, nextPart)
+			} else if tool.Name == string(llm.ToolGoogleSearch) {
+				b.Edit(message, llmResult+"\n\n正在Google搜索："+tool.Args["prompt"].(string))
+				searchResult, err := b.llmService.GoogleSearch(tool.Args["prompt"].(string))
+				if err != nil {
+					b.Edit(message, llmResult+fmt.Sprintf("Google搜索失败: %v", err))
+					return nil
+				}
+				b.Edit(message, llmResult+"\n\nGoogle搜索结果："+searchResult)
+				b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromFunctionCall(tool.Name, tool.Args)})
+				nextPart := genai.NewPartFromFunctionResponse(tool.Name, map[string]any{
+					"text": searchResult,
 				})
 				nextParts = append(nextParts, nextPart)
 			}

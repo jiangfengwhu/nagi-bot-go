@@ -22,17 +22,19 @@ type StreamData struct {
 
 // LLMService LLM服务结构 - 极简设计
 type LLMService struct {
-	streams map[string]*StreamData
-	baseURL string
-	apiKeys string
+	streams             map[string]*StreamData
+	baseURL             string
+	apiKeys             string
+	googleSearchApiKeys string
 }
 
 // NewLLMService 创建新的LLM服务实例
 func NewLLMService(config *config.Config) *LLMService {
 	service := &LLMService{
-		streams: make(map[string]*StreamData),
-		baseURL: config.LLM.BaseURL,
-		apiKeys: config.LLM.APIKeys,
+		streams:             make(map[string]*StreamData),
+		baseURL:             config.LLM.BaseURL,
+		apiKeys:             config.LLM.APIKeys,
+		googleSearchApiKeys: config.LLM.GoogleSearchAPIKeys,
 	}
 
 	return service
@@ -40,6 +42,11 @@ func NewLLMService(config *config.Config) *LLMService {
 
 func (s *LLMService) getApiKey() string {
 	apiKeys := strings.Split(s.apiKeys, ",")
+	return apiKeys[rand.Intn(len(apiKeys))]
+}
+
+func (s *LLMService) getGoogleSearchApiKey() string {
+	apiKeys := strings.Split(s.googleSearchApiKeys, ",")
 	return apiKeys[rand.Intn(len(apiKeys))]
 }
 
@@ -61,9 +68,12 @@ func (s *LLMService) CreateConversation(ctx context.Context, client *genai.Clien
 			{
 				FunctionDeclarations: []*genai.FunctionDeclaration{
 					ToolsDescMap[ToolGenerateImage],
+					ToolsDescMap[ToolGetTime],
+					ToolsDescMap[ToolGoogleSearch],
 				},
 			},
 		},
+		SafetySettings: TextSafetySettings,
 	}
 
 	// 创建chat
