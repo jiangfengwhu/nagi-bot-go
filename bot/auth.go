@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"jiangfengwhu/nagi-bot-go/database"
+	"strings"
 	"time"
 
 	tele "gopkg.in/telebot.v4"
@@ -38,6 +39,7 @@ func Auth(db *database.DB, b *tele.Bot) tele.MiddlewareFunc {
 						// 判断是不是提到自己
 						if mention == "@"+b.Me.Username {
 							isMention = true
+							msg.Text = strings.Replace(msg.Text, mention, "", 1)
 							break
 						}
 					}

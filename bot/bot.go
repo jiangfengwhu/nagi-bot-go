@@ -56,7 +56,10 @@ func (b *Bot) setupHandlers() {
 	needAuth.Use(Auth(b.db, b.Bot))
 	needAuth.Handle("/start", b.handleStart)
 	needAuth.Handle(tele.OnText, b.handleChat)
-	needAuth.Handle(tele.OnPhoto, b.handleChat)
+	needAuth.Handle(tele.OnPhoto, b.handleFile)
+	needAuth.Handle(tele.OnAudio, b.handleFile)
+	needAuth.Handle(tele.OnVoice, b.handleFile)
+	needAuth.Handle(tele.OnDocument, b.handleFile)
 	needAuth.Handle("/prompt", b.handleSystemPrompt)
 	needAuth.Handle("/c", b.handleRecharge)
 	needAuth.Handle("/my", b.handleMy)
@@ -107,6 +110,56 @@ func (b *Bot) handleStart(c tele.Context) error {
 	return c.Reply(fmt.Sprintf("欢迎回来，您的余额为%d个token\n\n使用/prompt 设置系统提示词，留空可查询当前提示词", user.TotalRechargedToken-user.TotalUsedToken))
 }
 
+func (b *Bot) handleFile(c tele.Context) error {
+	var file *tele.File
+	var filePath string
+	if c.Message().Photo != nil {
+		file = &c.Message().Photo.File
+		filePath = c.Message().Photo.FileID + ".jpg"
+	} else if c.Message().Audio != nil {
+		file = &c.Message().Audio.File
+		filePath = c.Message().Audio.FileID + ".mp3"
+	} else if c.Message().Voice != nil {
+		file = &c.Message().Voice.File
+		filePath = c.Message().Voice.FileID + ".ogg"
+	} else if c.Message().Document != nil {
+		file = &c.Message().Document.File
+		filePath = c.Message().Document.FileID + c.Message().Document.FileName
+	}
+	if file != nil {
+		user := c.Get("db_user").(*database.User)
+		message, err := b.Reply(c.Message(), "正在下载...")
+		if err != nil {
+			return c.Reply(fmt.Sprintf("发送消息失败: %v", err))
+		}
+		err = b.Download(file, filePath)
+		if err != nil {
+			return c.Reply(fmt.Sprintf("从Telegram下载文件失败: %v", err))
+		}
+		defer os.Remove(filePath)
+		ctx := context.Background()
+		client, err := b.llmService.NewClient(ctx)
+		if err != nil {
+			return c.Reply(fmt.Sprintf("创建LLMClient失败: %v", err))
+		}
+		b.Edit(message, "正在上传...")
+		uploadedFile, err := client.Files.UploadFromPath(ctx, filePath, nil)
+		if err != nil {
+			return c.Reply(fmt.Sprintf("上传到LLM失败: %v", err))
+		}
+		b.db.AddMessage(ctx, user.ID, "user", []*genai.Part{genai.NewPartFromURI(uploadedFile.URI, uploadedFile.MIMEType)})
+		if c.Message().Voice != nil {
+			b.Edit(message, "上传成功")
+			c.Message().Text = "请回复这条语音消息"
+			b.handleChat(c)
+		} else {
+			_, err = b.Edit(message, "上传成功，请继续您的对话")
+		}
+		return err
+	}
+	return nil
+}
+
 func (b *Bot) handleChat(c tele.Context) error {
 	user := c.Get("db_user").(*database.User)
 	message, err := b.Reply(c.Message(), "正在思考...")
@@ -117,10 +170,8 @@ func (b *Bot) handleChat(c tele.Context) error {
 	history := []*genai.Content{
 		genai.NewContentFromText(systemPrompt, genai.RoleUser),
 	}
-	photo := c.Message().Photo
-	caption := c.Message().Caption
 	text := c.Message().Text
-	nextParts := []*genai.Part{}
+	nextParts := []*genai.Part{genai.NewPartFromText(text)}
 	llmResult := ""
 	promptToken := int32(0)
 	totalToken := int32(0)
@@ -130,29 +181,6 @@ func (b *Bot) handleChat(c tele.Context) error {
 	client, err := b.llmService.NewClient(ctx)
 	if err != nil {
 		return c.Reply(fmt.Sprintf("创建LLMClient失败: %v", err))
-	}
-	if photo != nil {
-		b.Edit(message, "正在上传图片...")
-		filePath := photo.FileID + ".jpg"
-		err := b.Download(&photo.File, filePath)
-		if err != nil {
-			return c.Reply(fmt.Sprintf("下载图片失败: %v", err))
-		}
-		defer os.Remove(filePath)
-		uploadedFile, err := client.Files.UploadFromPath(ctx, filePath, nil)
-		if err != nil {
-			return c.Reply(fmt.Sprintf("上传图片失败: %v", err))
-		}
-		nextParts = append(nextParts, genai.NewPartFromURI(uploadedFile.URI, uploadedFile.MIMEType))
-		if caption != "" {
-			nextParts = append(nextParts, genai.NewPartFromText(caption))
-		} else {
-			nextParts = append(nextParts, genai.NewPartFromText("请描述该图片的内容"))
-		}
-	}
-
-	if text != "" {
-		nextParts = append(nextParts, genai.NewPartFromText(text))
 	}
 
 	historyMsgs, err := b.db.GetRecentMessages(ctx, user.ID, 10)
@@ -184,13 +212,16 @@ func (b *Bot) handleChat(c tele.Context) error {
 		toolCalls := []*genai.FunctionCall{}
 		nextParts = []*genai.Part{}
 		tmpResult := ""
+		thoughtSignature := []byte{}
 
 		for chunk, err := range stream.Stream {
 			if err != nil {
 				c.Reply(fmt.Sprintf("获取流失败: %v", err))
 				continue
 			}
-			tmpResult += chunk.Text()
+			part := chunk.Candidates[0].Content.Parts[0]
+			tmpResult += part.Text
+			thoughtSignature = append(thoughtSignature, part.ThoughtSignature...)
 			if tmpResult != "" {
 				b.Edit(message, llmResult+ConvertMarkdownToTelegramMarkdownV2(tmpResult), tele.ModeMarkdownV2)
 			}
@@ -200,7 +231,11 @@ func (b *Bot) handleChat(c tele.Context) error {
 		}
 		if tmpResult != "" {
 			llmResult += tmpResult
-			b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromText(tmpResult)})
+			part := genai.NewPartFromText(tmpResult)
+			if len(thoughtSignature) > 0 {
+				part.ThoughtSignature = thoughtSignature
+			}
+			b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{part})
 		}
 		totalToken += promptToken
 		for _, tool := range toolCalls {
