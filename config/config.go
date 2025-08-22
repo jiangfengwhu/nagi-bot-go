@@ -13,6 +13,9 @@ type Config struct {
 		Timeout             int     `json:"timeout"`
 		DefaultSystemPrompt string  `json:"default_system_prompt"`
 		AdminIds            []int64 `json:"admin_ids"`
+		UseWebhook          bool    `json:"use_webhook"`
+		WebhookURL          string  `json:"webhook_url"`
+		ListenPort          string  `json:"listen_port"`
 	} `json:"bot"`
 	Database struct {
 		URL string `json:"url"`
@@ -49,6 +52,16 @@ func (c *Config) Validate() error {
 
 	if c.Bot.Timeout <= 0 {
 		c.Bot.Timeout = 10 // 设置默认值
+	}
+
+	// 验证webhook配置
+	if c.Bot.UseWebhook {
+		if c.Bot.WebhookURL == "" {
+			return fmt.Errorf("启用webhook时必须设置webhook_url")
+		}
+		if c.Bot.ListenPort == "" {
+			c.Bot.ListenPort = ":8080" // 使用HTTP默认端口，因为Cloudflare会处理HTTPS
+		}
 	}
 
 	// 验证数据库配置

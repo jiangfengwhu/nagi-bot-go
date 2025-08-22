@@ -29,9 +29,27 @@ type Bot struct {
 
 // New 创建新的 bot 实例
 func New(cfg *config.Config, db *database.DB, llmService *llm.LLMService) (*Bot, error) {
-	pref := tele.Settings{
-		Token:  cfg.Bot.Token,
-		Poller: &tele.LongPoller{Timeout: time.Duration(cfg.Bot.Timeout) * time.Second},
+	var pref tele.Settings
+
+	if cfg.Bot.UseWebhook {
+		// 使用webhook模式
+		webhook := &tele.Webhook{
+			Listen: cfg.Bot.ListenPort,
+			Endpoint: &tele.WebhookEndpoint{
+				PublicURL: cfg.Bot.WebhookURL,
+			},
+		}
+
+		pref = tele.Settings{
+			Token:  cfg.Bot.Token,
+			Poller: webhook,
+		}
+	} else {
+		// 使用长轮询模式
+		pref = tele.Settings{
+			Token:  cfg.Bot.Token,
+			Poller: &tele.LongPoller{Timeout: time.Duration(cfg.Bot.Timeout) * time.Second},
+		}
 	}
 
 	b, err := tele.NewBot(pref)
@@ -285,6 +303,12 @@ func (b *Bot) handleChat(c tele.Context) error {
 
 // Run 启动 bot
 func (b *Bot) Run() {
-	log.Println("Bot 开始运行...")
+	if b.config.Bot.UseWebhook {
+		log.Printf("Bot 开始运行 (Webhook 模式)...")
+		log.Printf("监听端口: %s", b.config.Bot.ListenPort)
+		log.Printf("Webhook URL: %s", b.config.Bot.WebhookURL)
+	} else {
+		log.Println("Bot 开始运行 (长轮询模式)...")
+	}
 	b.Start()
 }
