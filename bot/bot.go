@@ -78,14 +78,124 @@ func (b *Bot) setupHandlers() {
 	needAuth.Handle(tele.OnAudio, b.handleFile)
 	needAuth.Handle(tele.OnVoice, b.handleFile)
 	needAuth.Handle(tele.OnDocument, b.handleFile)
-	needAuth.Handle("/prompt", b.handleSystemPrompt)
 	needAuth.Handle("/c", b.handleRecharge)
-	needAuth.Handle("/my", b.handleMy)
+	needAuth.Handle("/reg", b.handleRegister)
 }
 
-func (b *Bot) handleMy(c tele.Context) error {
+func (b *Bot) handleRegister(c tele.Context) error {
 	user := c.Get("db_user").(*database.User)
-	return c.Reply(fmt.Sprintf("您的ID为: %d\n您的余额为: %d\n您的系统提示词为: %s", user.ID, user.TotalRechargedToken-user.TotalUsedToken, user.SystemPrompt))
+	name := strings.TrimSpace(strings.TrimPrefix(c.Message().Text, "/reg"))
+	if name == "" {
+		return c.Reply("请输入角色名")
+	}
+	player, err := b.db.GetCharacterStats(context.Background(), user.ID)
+	if err != nil {
+		return c.Reply(fmt.Sprintf("获取玩家信息失败: %v", err))
+	}
+	if player != nil {
+		return c.Reply("您已经注册了角色，/start查看角色信息")
+	}
+	ctx := context.Background()
+	client, err := b.llmService.NewClient(ctx)
+	if err != nil {
+		return c.Reply(fmt.Sprintf("创建LLMClient失败: %v", err))
+	}
+	config := &genai.GenerateContentConfig{
+		ResponseMIMEType:  "application/json",
+		SystemInstruction: genai.NewContentFromText(b.config.Prompts["system_prompt"], genai.RoleUser),
+		ResponseSchema: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"player_name": {
+					Type:        genai.TypeString,
+					Description: "修仙者的姓名",
+				},
+				"spiritual_roots": {
+					Type: genai.TypeArray,
+					Items: &genai.Schema{
+						Type:        genai.TypeObject,
+						Description: "单个灵根的键值对",
+						Properties: map[string]*genai.Schema{
+							"root_name": {
+								Type:        genai.TypeString,
+								Description: "灵根的名称 (常见灵根：'金', '木', '水', '火', '土'，特殊灵根：冰、雷、风、暗、光、空间、时间、混沌等指定灵根，比较罕见)",
+							},
+							"affinity": {
+								Type:        genai.TypeInteger,
+								Description: "该灵根的资质数值 (0-100)，越大越罕见",
+							},
+						},
+						Required: []string{"root_name", "affinity"},
+					},
+					Description: "灵根属性列表，每个元素包含灵根名称和其对应的资质。",
+				},
+				"physique": {
+					Type:        genai.TypeInteger,
+					Description: "根骨/体魄，影响生命值、攻击力、防御力",
+				},
+				"comprehension": {
+					Type:        genai.TypeInteger,
+					Description: "悟性，影响修炼速度和功法领悟",
+				},
+				"luck": {
+					Type:        genai.TypeInteger,
+					Description: "幸运值，影响奇遇概率",
+				},
+				"spirit_sense": {
+					Type:        genai.TypeInteger,
+					Description: "神识强度，根据灵根（特别是精神系灵根如空间、时间）和悟性计算。影响感知能力和法术威力",
+				},
+				"max_hp": {
+					Type:        genai.TypeInteger,
+					Description: "生命值，主要基于根骨和体质型灵根（土、木）计算，特殊体质可能有加成",
+				},
+				"max_mp": {
+					Type:        genai.TypeInteger,
+					Description: "法力值，基于灵根总体强度和特殊灵根（如水、冰、雷）计算",
+				},
+				"attack": {
+					Type:        genai.TypeInteger,
+					Description: "攻击力，主要基于金灵根、根骨，攻击型特殊灵根（雷、火）有加成",
+				},
+				"defense": {
+					Type:        genai.TypeInteger,
+					Description: "防御力，主要基于土灵根、根骨，防御型特殊灵根（冰、暗）有加成",
+				},
+				"speed": {
+					Type:        genai.TypeInteger,
+					Description: "速度，主要基于木灵根，风灵根有巨大加成，雷灵根也有提升",
+				},
+				"lifespan": {
+					Type:        genai.TypeInteger,
+					Description: "寿命（100-200），基于灵根品质和特殊灵根计算。时间灵根、混沌灵根等顶级灵根大幅延长寿命",
+				},
+				"background_story": {
+					Type:        genai.TypeString,
+					Description: "背景故事，要结合灵根特点描述角色的出身和修仙机缘",
+				},
+			},
+			Required: []string{"player_name", "spiritual_roots", "physique", "comprehension", "luck", "spirit_sense", "max_hp", "max_mp", "attack", "defense", "speed", "lifespan", "background_story"},
+		},
+	}
+	message, _ := b.Reply(c.Message(), "正在生成角色...")
+	result, err := client.Models.GenerateContent(
+		ctx,
+		"gemini-2.5-flash",
+		genai.Text(fmt.Sprintf("创建一个修仙者角色，角色名称为: %s，现在时间是: %s", name, time.Now().Format("2006-01-02 15:04:05"))),
+		config,
+	)
+	if err != nil {
+		b.Edit(message, fmt.Sprintf("创建角色失败: %v", err))
+		return err
+	}
+	fmt.Println(result.Text())
+	player, err = b.llmService.CreatePlayer(b.db, user.ID, result.Text())
+	if err != nil {
+		b.Edit(message, fmt.Sprintf("创建角色失败: %v", err))
+		return err
+	}
+	b.Edit(message, fmt.Sprintf("角色创建成功: %s", player))
+	return nil
 }
 
 func (b *Bot) handleRecharge(c tele.Context) error {
@@ -112,20 +222,18 @@ func (b *Bot) handleRecharge(c tele.Context) error {
 	return c.Reply(fmt.Sprintf("充值成功，充值金额为%d个token", amount))
 }
 
-func (b *Bot) handleSystemPrompt(c tele.Context) error {
-	user := c.Get("db_user").(*database.User)
-	prompt := strings.TrimSpace(strings.TrimPrefix(c.Message().Text, "/prompt"))
-	if prompt == "" {
-		return c.Reply("您的系统提示词为: \n\n" + user.SystemPrompt)
-	}
-	b.db.UpdateUserSystemPrompt(context.Background(), user.TgId, prompt)
-	return c.Reply("系统提示词已更新")
-}
-
 // handleStart 处理 /start 命令
 func (b *Bot) handleStart(c tele.Context) error {
 	user := c.Get("db_user").(*database.User)
-	return c.Reply(fmt.Sprintf("欢迎回来，您的余额为%d个token\n\n使用/prompt 设置系统提示词，留空可查询当前提示词", user.TotalRechargedToken-user.TotalUsedToken))
+	player, err := b.db.GetCharacterStats(context.Background(), user.ID)
+	if err != nil {
+		return c.Reply(fmt.Sprintf("获取玩家信息失败: %v", err))
+	}
+	if player == nil {
+		return c.Reply("您还没有注册角色，请使用/reg 角色名 注册之后进行游戏")
+	} else {
+		return c.Reply(fmt.Sprintf("欢迎回来：\n\n灵石: %d\n\n角色信息: %s", user.TotalRechargedToken-user.TotalUsedToken, player))
+	}
 }
 
 func (b *Bot) handleFile(c tele.Context) error {
@@ -180,15 +288,20 @@ func (b *Bot) handleFile(c tele.Context) error {
 
 func (b *Bot) handleChat(c tele.Context) error {
 	user := c.Get("db_user").(*database.User)
+	player, _ := b.db.GetCharacterStats(context.Background(), user.ID)
+	if player == nil {
+		return c.Reply("您还没有注册角色，请使用/reg 角色名 注册之后进行游戏")
+	}
 	message, err := b.Reply(c.Message(), "正在思考...")
 	if err != nil {
 		return c.Reply(fmt.Sprintf("发送消息失败: %v", err))
 	}
-	systemPrompt := b.config.Bot.DefaultSystemPrompt + "\n\n" + user.SystemPrompt
+	systemPrompt := b.config.Prompts["system_prompt"] + fmt.Sprintf("\n\n玩家%s的信息如下：\n\n%s\n\n", player.Name, player)
 	history := []*genai.Content{
 		genai.NewContentFromText(systemPrompt, genai.RoleUser),
 	}
-	text := c.Message().Text
+	username := "[" + player.Name + "]"
+	text := fmt.Sprintf("%s: %s", username, c.Message().Text)
 	nextParts := []*genai.Part{genai.NewPartFromText(text)}
 	llmResult := ""
 	promptToken := int32(0)

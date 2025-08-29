@@ -3,7 +3,15 @@ package llm
 import (
 	"fmt"
 	"strings"
+
+	"jiangfengwhu/nagi-bot-go/database"
 )
+
+type ToolCallArgs struct {
+	DB     *database.DB
+	UserID int
+	Args   *map[string]any
+}
 
 // GoogleSearchResult 表示Google搜索的单个结果项
 type GoogleSearchResult struct {

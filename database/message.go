@@ -18,36 +18,13 @@ type Message struct {
 	LLMAPIType string    `json:"llm_api_type"`
 }
 
-// AddMessage 添加新消息，如果用户消息超过100条，删除最老的消息
+// AddMessage 添加新消息
 func (db *DB) AddMessage(ctx context.Context, userID int, role string, content any) error {
 	tx, err := db.BeginTx(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-
-	// 获取当前用户的消息数量
-	var count int
-	err = tx.QueryRow(ctx, "SELECT COUNT(*) FROM messages WHERE user_id = $1", userID).Scan(&count)
-	if err != nil {
-		return err
-	}
-
-	// 如果已达到100条限制，删除最老的消息
-	if count >= 100 {
-		_, err = tx.Exec(ctx, `
-			DELETE FROM messages 
-			WHERE user_id = $1 
-			AND created_at = (
-				SELECT MIN(created_at) 
-				FROM messages 
-				WHERE user_id = $1
-			)
-		`, userID)
-		if err != nil {
-			return err
-		}
-	}
 
 	// 序列化content为JSONB
 	contentBytes, err := json.Marshal(content)

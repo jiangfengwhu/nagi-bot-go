@@ -29,6 +29,7 @@ const (
 	ToolGenerateImage ToolEnum = "generate_image"
 	ToolGetTime       ToolEnum = "get_time"
 	ToolGoogleSearch  ToolEnum = "google_search"
+	ToolCreatePlayer  ToolEnum = "create_player"
 )
 
 var ToolsDescMap = map[ToolEnum]*genai.FunctionDeclaration{
@@ -62,6 +63,15 @@ var ToolsDescMap = map[ToolEnum]*genai.FunctionDeclaration{
 				},
 			},
 			Required: []string{"prompt"},
+		},
+	},
+	ToolCreatePlayer: {
+		Name:        string(ToolCreatePlayer),
+		Description: "根据用户提供的名称创建新修仙者角色。创建时需要生成完整的修仙者属性，包括：基础信（姓名、年龄、出生地）。灵根属性（根据姓名和时辰生成）、基础属性（根据灵根生成生命值、法力值、攻击防御等）、修炼属性（悟性）。请根据用户名、当前时间，结合周易八卦、五行相生相克理论来生成合理的初始属性。",
+		Parameters: &genai.Schema{
+			Type:       genai.TypeObject,
+			Properties: map[string]*genai.Schema{},
+			Required:   []string{"player_name", "spiritual_roots", "physique", "comprehension", "luck", "spirit_sense", "max_hp", "max_mp", "attack", "defense", "speed", "lifespan", "background_story"},
 		},
 	},
 }

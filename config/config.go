@@ -9,13 +9,12 @@ import (
 // Config 配置结构体
 type Config struct {
 	Bot struct {
-		Token               string  `json:"token"`
-		Timeout             int     `json:"timeout"`
-		DefaultSystemPrompt string  `json:"default_system_prompt"`
-		AdminIds            []int64 `json:"admin_ids"`
-		UseWebhook          bool    `json:"use_webhook"`
-		WebhookURL          string  `json:"webhook_url"`
-		ListenPort          string  `json:"listen_port"`
+		Token      string  `json:"token"`
+		Timeout    int     `json:"timeout"`
+		AdminIds   []int64 `json:"admin_ids"`
+		UseWebhook bool    `json:"use_webhook"`
+		WebhookURL string  `json:"webhook_url"`
+		ListenPort string  `json:"listen_port"`
 	} `json:"bot"`
 	Database struct {
 		URL string `json:"url"`
@@ -25,6 +24,7 @@ type Config struct {
 		BaseURL             string `json:"base_url"`
 		GoogleSearchAPIKeys string `json:"google_search_api_keys"`
 	} `json:"llm"`
+	Prompts map[string]string `json:"prompts"`
 }
 
 // Load 从配置文件加载配置
@@ -39,6 +39,13 @@ func Load(filename string) (*Config, error) {
 	decoder := json.NewDecoder(file)
 	if err := decoder.Decode(&config); err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %v", err)
+	}
+
+	// 对所有Prompts中的字段进行读取文件替换
+	for key, value := range config.Prompts {
+		if content, err := os.ReadFile(value); err == nil {
+			config.Prompts[key] = string(content)
+		}
 	}
 
 	return &config, nil

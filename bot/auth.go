@@ -27,7 +27,7 @@ func Auth(db *database.DB, b *tele.Bot) tele.MiddlewareFunc {
 					SystemPrompt:        "",
 				}
 				db.CreateUser(context.Background(), user)
-				c.Send("注册成功，欢迎使用 Nagi Bot！您已获得10000000个token")
+				c.Send("欢迎来到《凡尘仙途》。您已获得1000000个灵石，请使用/reg 角色名 注册之后进行游戏")
 			}
 			c.Set("db_user", user)
 			if c.Message().Chat.Type != "private" {
