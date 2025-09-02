@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"jiangfengwhu/nagi-bot-go/database"
 )
 
 func escapeTelegramMarkdownV2(text string) string {
@@ -160,4 +162,49 @@ func ConvertMarkdownToTelegramMarkdownV2(md string) string {
 	md = processPlaceholders(md, elements)
 
 	return md
+}
+
+func formatPlayerInfo(player *database.CharacterStats) string {
+
+	spiritualRoots := ""
+	for _, root := range *player.SpiritualRoots {
+		spiritualRoots += fmt.Sprintf("- %s: %d\n", root.RootName, root.Afinity)
+	}
+	// telegram markdown v2 format，emoji开头
+	return fmt.Sprintf("👤 角色名称: %s\n", player.Name) + "\n" +
+		fmt.Sprintf("🌟 角色等级: %d\n", player.RealmLevel) + "\n" +
+		fmt.Sprintf("🌿 角色境界: %s\n", player.Realm) + "\n" +
+		fmt.Sprintf("🌱 角色灵根: \n%s\n", spiritualRoots) + "\n" +
+		fmt.Sprintf("🔮 角色神识: %d\n", player.SpiritSense) + "\n" +
+		fmt.Sprintf("💪 角色根骨: %d\n", player.Physique) + "\n" +
+		fmt.Sprintf("👹 角色煞气: %d\n", player.DemonicAura) + "\n" +
+		fmt.Sprintf("👺 角色道号: %s\n", player.TaoistName) + "\n" +
+		fmt.Sprintf("💜 角色生命值: %d\n", player.HP) + "\n" +
+		fmt.Sprintf("💚 角色法力值: %d\n", player.MP) + "\n" +
+		fmt.Sprintf("💪 角色攻击力: %d\n", player.Attack) + "\n" +
+		fmt.Sprintf("🛡️ 角色防御力: %d\n", player.Defense) + "\n" +
+		fmt.Sprintf("🏃 角色速度: %d\n", player.Speed) + "\n" +
+		fmt.Sprintf("🍀 角色幸运值: %d\n", player.Luck) + "\n" +
+		fmt.Sprintf("💪 角色修炼经验: %d\n", player.Experience) + "\n" +
+		fmt.Sprintf("🤔 角色悟性: %d\n", player.Comprehension) + "\n" +
+		fmt.Sprintf("👵 角色年龄: %d\n", player.Age) + "\n" +
+		fmt.Sprintf("👴 角色寿命: %d\n", player.Lifespan) + "\n" +
+		fmt.Sprintf("🏠 角色位置: %s\n", player.Location) + "\n" +
+		fmt.Sprintf("👨‍🦰 角色状态: %s\n", player.Status) + "\n" +
+		fmt.Sprintf("📚 角色成长经历: %s\n", player.Stories)
+}
+
+func formatInventoryInfo(inventory []*database.InventoryItem) string {
+	inventoryInfo := ""
+	for _, item := range inventory {
+		inventoryInfo += fmt.Sprintf("💼 背包物品: %s\n", item.ItemName) + "\n" +
+			fmt.Sprintf("🔍 物品数量: %d\n", item.Quantity) + "\n" +
+			fmt.Sprintf("🎯 物品类型: %s\n", item.ItemType) + "\n" +
+			fmt.Sprintf("🔮 物品品质: %s\n", item.Quality) + "\n" +
+			fmt.Sprintf("🔍 物品等级: %d\n", item.Level) + "\n" +
+			fmt.Sprintf("🔍 物品属性: %s\n", item.Properties) + "\n" +
+			fmt.Sprintf("📝 物品描述: %s\n", item.Description)
+		inventoryInfo += "\n"
+	}
+	return inventoryInfo
 }

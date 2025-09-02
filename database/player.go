@@ -9,7 +9,12 @@ import (
 )
 
 // SpiritualRoots 灵根属性结构
-type SpiritualRoots map[string]int
+type SpiritualRoots []SpiritualRoot
+
+type SpiritualRoot struct {
+	RootName string `json:"root_name"`
+	Afinity  int    `json:"affinity"`
+}
 
 // CharacterStats 人物属性结构
 type CharacterStats struct {
@@ -54,6 +59,9 @@ type CharacterStats struct {
 
 	// 状态
 	Status string `json:"status"`
+
+	// 成长经历
+	Stories string `json:"stories"`
 }
 
 func (c *CharacterStats) String() string {
@@ -83,14 +91,14 @@ func (db *DB) CreateCharacterStats(ctx context.Context, stats *CharacterStats) e
 			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
-			age, lifespan, location, status
+			age, lifespan, location, status, stories
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6, $7, $8, $9,
 			$10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19,
-			$20, $21, $22, $23
+			$20, $21, $22, $23, $24
 		)
 	`
 
@@ -101,8 +109,18 @@ func (db *DB) CreateCharacterStats(ctx context.Context, stats *CharacterStats) e
 		stats.Attack, stats.Defense, stats.Speed, stats.Luck,
 		stats.Experience, stats.Comprehension,
 		stats.Age, stats.Lifespan, stats.Location, stats.Status,
+		stats.Stories,
 	)
 	return err
+}
+
+func (db *DB) NameExists(ctx context.Context, name string) (bool, error) {
+	query := `
+		SELECT EXISTS(SELECT 1 FROM character_stats WHERE name = $1)
+	`
+	var exists bool
+	err := db.GetPool().QueryRow(ctx, query, name).Scan(&exists)
+	return exists, err
 }
 
 // GetCharacterStats 获取人物属性
@@ -116,7 +134,7 @@ func (db *DB) GetCharacterStats(ctx context.Context, userID int) (*CharacterStat
 			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
-			age, lifespan, location, status
+			age, lifespan, location, status, stories
 		FROM character_stats
 		WHERE user_id = $1
 	`
@@ -131,7 +149,7 @@ func (db *DB) GetCharacterStats(ctx context.Context, userID int) (*CharacterStat
 		&stats.HP, &stats.MaxHP, &stats.MP, &stats.MaxMP,
 		&stats.Attack, &stats.Defense, &stats.Speed, &stats.Luck,
 		&stats.Experience, &stats.Comprehension,
-		&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status,
+		&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status, &stats.Stories,
 	)
 
 	if err != nil {
@@ -171,7 +189,7 @@ func (db *DB) UpdateCharacterStats(ctx context.Context, stats *CharacterStats) e
 			hp = $10, max_hp = $11, mp = $12, max_mp = $13,
 			attack = $14, defense = $15, speed = $16, luck = $17,
 			experience = $18, comprehension = $19,
-			age = $20, lifespan = $21, location = $22, status = $23
+			age = $20, lifespan = $21, location = $22, status = $23, stories = $24
 		WHERE user_id = $1
 	`
 
@@ -181,7 +199,7 @@ func (db *DB) UpdateCharacterStats(ctx context.Context, stats *CharacterStats) e
 		stats.HP, stats.MaxHP, stats.MP, stats.MaxMP,
 		stats.Attack, stats.Defense, stats.Speed, stats.Luck,
 		stats.Experience, stats.Comprehension,
-		stats.Age, stats.Lifespan, stats.Location, stats.Status,
+		stats.Age, stats.Lifespan, stats.Location, stats.Status, stats.Stories,
 	)
 	return err
 }
@@ -323,7 +341,7 @@ func (db *DB) GetCharactersByRealm(ctx context.Context, realm string) ([]*Charac
 			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
-			age, lifespan, location, status
+			age, lifespan, location, status, stories
 		FROM character_stats
 		WHERE realm = $1
 		ORDER BY realm_level DESC, experience DESC
@@ -345,7 +363,7 @@ func (db *DB) GetCharactersByRealm(ctx context.Context, realm string) ([]*Charac
 			&stats.HP, &stats.MaxHP, &stats.MP, &stats.MaxMP,
 			&stats.Attack, &stats.Defense, &stats.Speed, &stats.Luck,
 			&stats.Experience, &stats.Comprehension,
-			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status,
+			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status, &stats.Stories,
 		)
 		if err != nil {
 			return nil, err
@@ -376,7 +394,7 @@ func (db *DB) GetCharactersByLocation(ctx context.Context, location string) ([]*
 			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
-			age, lifespan, location, status
+			age, lifespan, location, status, stories
 		FROM character_stats
 		WHERE location = $1
 		ORDER BY realm_level DESC, experience DESC
@@ -398,7 +416,7 @@ func (db *DB) GetCharactersByLocation(ctx context.Context, location string) ([]*
 			&stats.HP, &stats.MaxHP, &stats.MP, &stats.MaxMP,
 			&stats.Attack, &stats.Defense, &stats.Speed, &stats.Luck,
 			&stats.Experience, &stats.Comprehension,
-			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status,
+			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status, &stats.Stories,
 		)
 		if err != nil {
 			return nil, err
@@ -429,7 +447,7 @@ func (db *DB) GetCharactersByTaoistName(ctx context.Context, taoistName string) 
 			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
-			age, lifespan, location, status
+			age, lifespan, location, status, stories
 		FROM character_stats
 		WHERE taoist_name ILIKE '%' || $1 || '%'
 		ORDER BY realm_level DESC, experience DESC
@@ -451,7 +469,7 @@ func (db *DB) GetCharactersByTaoistName(ctx context.Context, taoistName string) 
 			&stats.HP, &stats.MaxHP, &stats.MP, &stats.MaxMP,
 			&stats.Attack, &stats.Defense, &stats.Speed, &stats.Luck,
 			&stats.Experience, &stats.Comprehension,
-			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status,
+			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status, &stats.Stories,
 		)
 		if err != nil {
 			return nil, err
@@ -504,7 +522,7 @@ func (db *DB) GetCharactersBySpiritualRoot(ctx context.Context, rootType string,
 			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
-			age, lifespan, location, status
+			age, lifespan, location, status, stories
 		FROM character_stats
 		WHERE spiritual_roots ->> $1 IS NOT NULL 
 		AND CAST(spiritual_roots ->> $1 AS INTEGER) >= $2
@@ -527,7 +545,7 @@ func (db *DB) GetCharactersBySpiritualRoot(ctx context.Context, rootType string,
 			&stats.HP, &stats.MaxHP, &stats.MP, &stats.MaxMP,
 			&stats.Attack, &stats.Defense, &stats.Speed, &stats.Luck,
 			&stats.Experience, &stats.Comprehension,
-			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status,
+			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status, &stats.Stories,
 		)
 		if err != nil {
 			return nil, err

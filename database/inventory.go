@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -11,71 +10,222 @@ import (
 
 // InventoryItem 背包物品结构
 type InventoryItem struct {
-	UserID       int                    `json:"user_id"`
-	ItemID       int                    `json:"item_id"`
-	ItemName     string                 `json:"item_name"`
-	ItemType     string                 `json:"item_type"`
-	Quality      string                 `json:"quality"`
-	Level        int                    `json:"level"`
-	Quantity     int                    `json:"quantity"`
-	Properties   map[string]interface{} `json:"properties"`
-	Description  *string                `json:"description"`
-	ObtainedFrom *string                `json:"obtained_from"`
-	ObtainedAt   time.Time              `json:"obtained_at"`
+	UserID       int       `json:"user_id"`
+	ItemName     string    `json:"item_name"`
+	ItemType     string    `json:"item_type"`
+	Quality      string    `json:"quality"`
+	Level        int       `json:"level"`
+	Quantity     int       `json:"quantity"`
+	Properties   string    `json:"properties"`
+	Description  string    `json:"description"`
+	ObtainedFrom string    `json:"obtained_from"`
+	ObtainedAt   time.Time `json:"obtained_at"`
 }
 
-// AddInventoryItem 添加物品到背包
-func (db *DB) AddInventoryItem(ctx context.Context, item *InventoryItem) error {
-	// 先检查是否已存在相同物品，如果存在则增加数量
-	existingItem, err := db.GetInventoryItemByID(ctx, item.UserID, item.ItemID)
+// AddInventoryItemsBatch 批量添加物品到背包
+func (db *DB) AddInventoryItemsBatch(ctx context.Context, items []*InventoryItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	// 开始事务
+	tx, err := db.GetPool().Begin(ctx)
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback(ctx)
 
-	if existingItem != nil {
-		// 物品已存在，增加数量
-		return db.UpdateInventoryItemQuantity(ctx, item.UserID, item.ItemID, existingItem.Quantity+item.Quantity)
+	// 为了提高效率，先批量查询现有物品
+	userItemMap := make(map[int]map[string]*InventoryItem)
+
+	// 按用户ID分组
+	userItems := make(map[int][]*InventoryItem)
+	for _, item := range items {
+		userItems[item.UserID] = append(userItems[item.UserID], item)
 	}
 
-	// 新物品，直接插入
-	propertiesJSON, err := json.Marshal(item.Properties)
+	// 为每个用户查询现有物品
+	for userID, userItemList := range userItems {
+		itemNames := make([]string, len(userItemList))
+		for i, item := range userItemList {
+			itemNames[i] = item.ItemName
+		}
+
+		// 批量查询现有物品
+		existingItems, err := db.getInventoryItemsByNamesInTx(ctx, tx, userID, itemNames)
+		if err != nil {
+			return err
+		}
+
+		// 建立用户物品映射
+		if userItemMap[userID] == nil {
+			userItemMap[userID] = make(map[string]*InventoryItem)
+		}
+		for _, existingItem := range existingItems {
+			userItemMap[userID][existingItem.ItemName] = existingItem
+		}
+	}
+
+	// 准备批量插入和更新的数据
+	var itemsToInsert []*InventoryItem
+	var itemsToUpdate []*InventoryItem
+
+	for _, item := range items {
+		if existingItem, exists := userItemMap[item.UserID][item.ItemName]; exists {
+			// 物品已存在，准备更新数量
+			existingItem.Quantity += item.Quantity
+			itemsToUpdate = append(itemsToUpdate, existingItem)
+		} else {
+			// 新物品，准备插入
+			itemsToInsert = append(itemsToInsert, item)
+		}
+	}
+
+	// 批量插入新物品
+	if len(itemsToInsert) > 0 {
+		err = db.batchInsertInventoryItems(ctx, tx, itemsToInsert)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 批量更新现有物品数量
+	if len(itemsToUpdate) > 0 {
+		err = db.batchUpdateInventoryItemQuantity(ctx, tx, itemsToUpdate)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 提交事务
+	return tx.Commit(ctx)
+}
+
+// getInventoryItemsByNamesInTx 在事务中批量查询物品
+func (db *DB) getInventoryItemsByNamesInTx(ctx context.Context, tx pgx.Tx, userID int, itemNames []string) ([]*InventoryItem, error) {
+	if len(itemNames) == 0 {
+		return nil, nil
+	}
+
+	query := `
+		SELECT user_id, item_name, item_type, quality, level, quantity,
+			properties, description, obtained_from, obtained_at
+		FROM inventory
+		WHERE user_id = $1 AND item_name = ANY($2)
+	`
+
+	rows, err := tx.Query(ctx, query, userID, itemNames)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []*InventoryItem
+	for rows.Next() {
+		var item InventoryItem
+		err := rows.Scan(
+			&item.UserID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
+			&item.Properties, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, &item)
+	}
+
+	return items, rows.Err()
+}
+
+// batchInsertInventoryItems 批量插入物品
+func (db *DB) batchInsertInventoryItems(ctx context.Context, tx pgx.Tx, items []*InventoryItem) error {
+	if len(items) == 0 {
+		return nil
 	}
 
 	query := `
 		INSERT INTO inventory (
-			user_id, item_id, item_name, item_type, quality, level, quantity,
+			user_id, item_name, item_type, quality, level, quantity,
 			properties, description, obtained_from, obtained_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
-	_, err = db.GetPool().Exec(ctx, query,
-		item.UserID, item.ItemID, item.ItemName, item.ItemType, item.Quality, item.Level, item.Quantity,
-		propertiesJSON, item.Description, item.ObtainedFrom, item.ObtainedAt,
-	)
-	return err
+	batch := &pgx.Batch{}
+	for _, item := range items {
+		batch.Queue(query,
+			item.UserID, item.ItemName, item.ItemType, item.Quality, item.Level, item.Quantity,
+			item.Properties, item.Description, item.ObtainedFrom, item.ObtainedAt,
+		)
+	}
+
+	results := tx.SendBatch(ctx, batch)
+	defer results.Close()
+
+	// 处理所有批量插入结果
+	for range items {
+		_, err := results.Exec()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// batchUpdateInventoryItemQuantity 批量更新物品数量
+func (db *DB) batchUpdateInventoryItemQuantity(ctx context.Context, tx pgx.Tx, items []*InventoryItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	query := `
+		UPDATE inventory 
+		SET quantity = $3
+		WHERE user_id = $1 AND item_name = $2
+	`
+
+	batch := &pgx.Batch{}
+	for _, item := range items {
+		if item.Quantity <= 0 {
+			// 数量为0或负数时，删除物品
+			deleteQuery := `DELETE FROM inventory WHERE user_id = $1 AND item_name = $2`
+			batch.Queue(deleteQuery, item.UserID, item.ItemName)
+		} else {
+			batch.Queue(query, item.UserID, item.ItemName, item.Quantity)
+		}
+	}
+
+	results := tx.SendBatch(ctx, batch)
+	defer results.Close()
+
+	// 处理所有批量更新结果
+	for range items {
+		_, err := results.Exec()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // GetInventoryItemByID 根据物品ID获取背包物品
-func (db *DB) GetInventoryItemByID(ctx context.Context, userID int, itemID int) (*InventoryItem, error) {
+func (db *DB) GetInventoryItemByName(ctx context.Context, userID int, itemName string) (*InventoryItem, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	query := `
-		SELECT user_id, item_id, item_name, item_type, quality, level, quantity,
+		SELECT user_id, item_name, item_type, quality, level, quantity,
 			properties, description, obtained_from, obtained_at
 		FROM inventory
-		WHERE user_id = $1 AND item_id = $2
+		WHERE user_id = $1 AND item_name = $2
 	`
 
-	row := db.GetPool().QueryRow(timeoutCtx, query, userID, itemID)
+	row := db.GetPool().QueryRow(timeoutCtx, query, userID, itemName)
 
 	var item InventoryItem
-	var propertiesJSON []byte
 	err := row.Scan(
-		&item.UserID, &item.ItemID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
-		&propertiesJSON, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
+		&item.UserID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
+		&item.Properties, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
 	)
 
 	if err != nil {
@@ -83,14 +233,6 @@ func (db *DB) GetInventoryItemByID(ctx context.Context, userID int, itemID int) 
 			return nil, nil
 		}
 		return nil, err
-	}
-
-	// 解析properties JSON
-	if len(propertiesJSON) > 0 {
-		err = json.Unmarshal(propertiesJSON, &item.Properties)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	return &item, nil
@@ -102,7 +244,7 @@ func (db *DB) GetUserInventory(ctx context.Context, userID int) ([]*InventoryIte
 	defer cancel()
 
 	query := `
-		SELECT user_id, item_id, item_name, item_type, quality, level, quantity,
+		SELECT user_id, item_name, item_type, quality, level, quantity,
 			properties, description, obtained_from, obtained_at
 		FROM inventory
 		WHERE user_id = $1
@@ -118,21 +260,12 @@ func (db *DB) GetUserInventory(ctx context.Context, userID int) ([]*InventoryIte
 	var items []*InventoryItem
 	for rows.Next() {
 		var item InventoryItem
-		var propertiesJSON []byte
 		err := rows.Scan(
-			&item.UserID, &item.ItemID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
-			&propertiesJSON, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
+			&item.UserID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
+			&item.Properties, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
 		)
 		if err != nil {
 			return nil, err
-		}
-
-		// 解析properties JSON
-		if len(propertiesJSON) > 0 {
-			err = json.Unmarshal(propertiesJSON, &item.Properties)
-			if err != nil {
-				return nil, err
-			}
 		}
 
 		items = append(items, &item)
@@ -147,7 +280,7 @@ func (db *DB) GetInventoryByType(ctx context.Context, userID int, itemType strin
 	defer cancel()
 
 	query := `
-		SELECT user_id, item_id, item_name, item_type, quality, level, quantity,
+		SELECT user_id, item_name, item_type, quality, level, quantity,
 			properties, description, obtained_from, obtained_at
 		FROM inventory
 		WHERE user_id = $1 AND item_type = $2
@@ -163,21 +296,12 @@ func (db *DB) GetInventoryByType(ctx context.Context, userID int, itemType strin
 	var items []*InventoryItem
 	for rows.Next() {
 		var item InventoryItem
-		var propertiesJSON []byte
 		err := rows.Scan(
-			&item.UserID, &item.ItemID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
-			&propertiesJSON, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
+			&item.UserID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
+			&item.Properties, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
 		)
 		if err != nil {
 			return nil, err
-		}
-
-		// 解析properties JSON
-		if len(propertiesJSON) > 0 {
-			err = json.Unmarshal(propertiesJSON, &item.Properties)
-			if err != nil {
-				return nil, err
-			}
 		}
 
 		items = append(items, &item)
@@ -187,51 +311,46 @@ func (db *DB) GetInventoryByType(ctx context.Context, userID int, itemType strin
 }
 
 // UpdateInventoryItemQuantity 更新物品数量
-func (db *DB) UpdateInventoryItemQuantity(ctx context.Context, userID int, itemID int, quantity int) error {
+func (db *DB) UpdateInventoryItemQuantity(ctx context.Context, userID int, itemName string, quantity int) error {
 	if quantity <= 0 {
 		// 数量为0或负数时，删除物品
-		return db.RemoveInventoryItem(ctx, userID, itemID)
+		return db.RemoveInventoryItem(ctx, userID, itemName)
 	}
 
 	query := `
 		UPDATE inventory 
 		SET quantity = $3
-		WHERE user_id = $1 AND item_id = $2
+		WHERE user_id = $1 AND item_name = $2
 	`
-	_, err := db.GetPool().Exec(ctx, query, userID, itemID, quantity)
+	_, err := db.GetPool().Exec(ctx, query, userID, itemName, quantity)
 	return err
 }
 
 // RemoveInventoryItem 从背包移除物品
-func (db *DB) RemoveInventoryItem(ctx context.Context, userID int, itemID int) error {
+func (db *DB) RemoveInventoryItem(ctx context.Context, userID int, itemName string) error {
 	query := `
 		DELETE FROM inventory
-		WHERE user_id = $1 AND item_id = $2
+		WHERE user_id = $1 AND item_name = $2
 	`
-	_, err := db.GetPool().Exec(ctx, query, userID, itemID)
+	_, err := db.GetPool().Exec(ctx, query, userID, itemName)
 	return err
 }
 
 // UpdateInventoryItemProperties 更新物品属性
-func (db *DB) UpdateInventoryItemProperties(ctx context.Context, userID int, itemID int, properties map[string]interface{}) error {
-	propertiesJSON, err := json.Marshal(properties)
-	if err != nil {
-		return err
-	}
-
+func (db *DB) UpdateInventoryItemProperties(ctx context.Context, userID int, itemName string, properties string) error {
 	query := `
 		UPDATE inventory 
 		SET properties = $3
-		WHERE user_id = $1 AND item_id = $2
+		WHERE user_id = $1 AND item_name = $2
 	`
-	_, err = db.GetPool().Exec(ctx, query, userID, itemID, propertiesJSON)
+	_, err := db.GetPool().Exec(ctx, query, userID, itemName, properties)
 	return err
 }
 
 // UseItem 使用物品（减少数量）
-func (db *DB) UseItem(ctx context.Context, userID int, itemID int, useQuantity int) error {
+func (db *DB) UseItem(ctx context.Context, userID int, itemName string, useQuantity int) error {
 	// 先获取当前数量
-	item, err := db.GetInventoryItemByID(ctx, userID, itemID)
+	item, err := db.GetInventoryItemByName(ctx, userID, itemName)
 	if err != nil {
 		return err
 	}
@@ -244,21 +363,21 @@ func (db *DB) UseItem(ctx context.Context, userID int, itemID int, useQuantity i
 	}
 
 	newQuantity := item.Quantity - useQuantity
-	return db.UpdateInventoryItemQuantity(ctx, userID, itemID, newQuantity)
+	return db.UpdateInventoryItemQuantity(ctx, userID, item.ItemName, newQuantity)
 }
 
 // GetInventoryItemCount 获取特定物品的数量
-func (db *DB) GetInventoryItemCount(ctx context.Context, userID int, itemID int) (int, error) {
+func (db *DB) GetInventoryItemCount(ctx context.Context, userID int, itemName string) (int, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	query := `
 		SELECT quantity FROM inventory
-		WHERE user_id = $1 AND item_id = $2
+		WHERE user_id = $1 AND item_name = $2
 	`
 
 	var quantity int
-	err := db.GetPool().QueryRow(timeoutCtx, query, userID, itemID).Scan(&quantity)
+	err := db.GetPool().QueryRow(timeoutCtx, query, userID, itemName).Scan(&quantity)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return 0, nil
@@ -275,7 +394,7 @@ func (db *DB) GetInventoryByQuality(ctx context.Context, userID int, quality str
 	defer cancel()
 
 	query := `
-		SELECT user_id, item_id, item_name, item_type, quality, level, quantity,
+		SELECT user_id, item_name, item_type, quality, level, quantity,
 			properties, description, obtained_from, obtained_at
 		FROM inventory
 		WHERE user_id = $1 AND quality = $2
@@ -291,21 +410,12 @@ func (db *DB) GetInventoryByQuality(ctx context.Context, userID int, quality str
 	var items []*InventoryItem
 	for rows.Next() {
 		var item InventoryItem
-		var propertiesJSON []byte
 		err := rows.Scan(
-			&item.UserID, &item.ItemID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
-			&propertiesJSON, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
+			&item.UserID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
+			&item.Properties, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
 		)
 		if err != nil {
 			return nil, err
-		}
-
-		// 解析properties JSON
-		if len(propertiesJSON) > 0 {
-			err = json.Unmarshal(propertiesJSON, &item.Properties)
-			if err != nil {
-				return nil, err
-			}
 		}
 
 		items = append(items, &item)
@@ -320,7 +430,7 @@ func (db *DB) SearchInventoryByName(ctx context.Context, userID int, itemName st
 	defer cancel()
 
 	query := `
-		SELECT user_id, item_id, item_name, item_type, quality, level, quantity,
+		SELECT user_id, item_name, item_type, quality, level, quantity,
 			properties, description, obtained_from, obtained_at
 		FROM inventory
 		WHERE user_id = $1 AND item_name ILIKE '%' || $2 || '%'
@@ -336,21 +446,12 @@ func (db *DB) SearchInventoryByName(ctx context.Context, userID int, itemName st
 	var items []*InventoryItem
 	for rows.Next() {
 		var item InventoryItem
-		var propertiesJSON []byte
 		err := rows.Scan(
-			&item.UserID, &item.ItemID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
-			&propertiesJSON, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
+			&item.UserID, &item.ItemName, &item.ItemType, &item.Quality, &item.Level, &item.Quantity,
+			&item.Properties, &item.Description, &item.ObtainedFrom, &item.ObtainedAt,
 		)
 		if err != nil {
 			return nil, err
-		}
-
-		// 解析properties JSON
-		if len(propertiesJSON) > 0 {
-			err = json.Unmarshal(propertiesJSON, &item.Properties)
-			if err != nil {
-				return nil, err
-			}
 		}
 
 		items = append(items, &item)

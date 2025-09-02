@@ -66,13 +66,15 @@ CREATE TABLE IF NOT EXISTS character_stats (
     location VARCHAR(100) NOT NULL DEFAULT '新手村', -- 当前位置
     
     -- 状态
-    status VARCHAR(20) NOT NULL DEFAULT '健康'
+    status VARCHAR(20) NOT NULL DEFAULT '健康',
+
+    -- 成长经历
+    stories TEXT NOT NULL DEFAULT '' -- 成长经历
 );
 
 -- 背包系统表 - 存储物品信息
 CREATE TABLE IF NOT EXISTS inventory (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    item_id INTEGER NOT NULL,       -- 物品ID
     item_name VARCHAR(100) NOT NULL, -- 物品名称
     item_type VARCHAR(50) NOT NULL,  -- 物品类型 (weapon, armor, pill, material, book, talisman)
     
@@ -84,7 +86,7 @@ CREATE TABLE IF NOT EXISTS inventory (
     quantity INTEGER NOT NULL DEFAULT 1,            -- 数量
     
     -- 物品属性
-    properties JSONB,  -- 存储物品的具体属性 (攻击力、防御力、特殊效果等)
+    properties TEXT,  -- 存储物品的具体属性 (攻击力、防御力、特殊效果等)
     
     -- 物品描述
     description TEXT,    -- 物品描述
