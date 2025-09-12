@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -29,16 +31,10 @@ type CharacterStats struct {
 	SpiritualRoots *SpiritualRoots `json:"spiritual_roots"`
 
 	// 新增属性
-	SpiritSense int     `json:"spirit_sense"` // 神识
-	Physique    int     `json:"physique"`     // 根骨/体魄
-	DemonicAura int     `json:"demonic_aura"` // 煞气/心魔
-	TaoistName  *string `json:"taoist_name"`  // 道号
-
-	// 基础属性
-	HP    int `json:"hp"`
-	MaxHP int `json:"max_hp"`
-	MP    int `json:"mp"`
-	MaxMP int `json:"max_mp"`
+	SpiritSense int    `json:"spirit_sense"` // 神识
+	Physique    int    `json:"physique"`     // 根骨/体魄
+	DemonicAura int    `json:"demonic_aura"` // 煞气/心魔
+	TaoistName  string `json:"taoist_name"`  // 道号
 
 	// 战斗属性
 	Attack  int `json:"attack"`
@@ -62,6 +58,41 @@ type CharacterStats struct {
 
 	// 成长经历
 	Stories string `json:"stories"`
+}
+
+// CharacterStatsUpdate 用于部分更新的结构体，所有字段都是指针类型
+type CharacterStatsUpdate struct {
+	UserID int `json:"user_id,omitempty"` // 必须字段，不使用指针
+
+	// 修炼境界
+	Realm      *string `json:"realm,omitempty"`
+	RealmLevel *int    `json:"realm_level,omitempty"`
+
+	// 新增属性
+	SpiritSense *int `json:"spirit_sense,omitempty"` // 神识
+	Physique    *int `json:"physique,omitempty"`     // 根骨/体魄
+	DemonicAura *int `json:"demonic_aura,omitempty"` // 煞气/心魔
+
+	// 战斗属性
+	Attack  *int `json:"attack,omitempty"`
+	Defense *int `json:"defense,omitempty"`
+	Speed   *int `json:"speed,omitempty"`
+	Luck    *int `json:"luck,omitempty"`
+
+	// 修炼相关
+	Comprehension *int `json:"comprehension,omitempty"`
+
+	// 寿命相关
+	Lifespan *int `json:"lifespan,omitempty"`
+
+	// 位置信息
+	Location *string `json:"location,omitempty"`
+
+	// 状态
+	Status *string `json:"status,omitempty"`
+
+	// 成长经历
+	Stories *string `json:"stories,omitempty"`
 }
 
 func (c *CharacterStats) String() string {
@@ -88,7 +119,6 @@ func (db *DB) CreateCharacterStats(ctx context.Context, stats *CharacterStats) e
 		INSERT INTO character_stats (
 			user_id, name, realm, realm_level,
 			spiritual_roots, spirit_sense, physique, demonic_aura, taoist_name,
-			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
 			age, lifespan, location, status, stories
@@ -105,7 +135,6 @@ func (db *DB) CreateCharacterStats(ctx context.Context, stats *CharacterStats) e
 	_, err = db.GetPool().Exec(ctx, query,
 		stats.UserID, stats.Name, stats.Realm, stats.RealmLevel,
 		spiritualRootsJSON, stats.SpiritSense, stats.Physique, stats.DemonicAura, stats.TaoistName,
-		stats.HP, stats.MaxHP, stats.MP, stats.MaxMP,
 		stats.Attack, stats.Defense, stats.Speed, stats.Luck,
 		stats.Experience, stats.Comprehension,
 		stats.Age, stats.Lifespan, stats.Location, stats.Status,
@@ -131,7 +160,6 @@ func (db *DB) GetCharacterStats(ctx context.Context, userID int) (*CharacterStat
 	query := `
 		SELECT user_id, name, realm, realm_level,
 			spiritual_roots, spirit_sense, physique, demonic_aura, taoist_name,
-			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
 			age, lifespan, location, status, stories
@@ -146,7 +174,6 @@ func (db *DB) GetCharacterStats(ctx context.Context, userID int) (*CharacterStat
 	err := row.Scan(
 		&stats.UserID, &stats.Name, &stats.Realm, &stats.RealmLevel,
 		&spiritualRootsJSON, &stats.SpiritSense, &stats.Physique, &stats.DemonicAura, &stats.TaoistName,
-		&stats.HP, &stats.MaxHP, &stats.MP, &stats.MaxMP,
 		&stats.Attack, &stats.Defense, &stats.Speed, &stats.Luck,
 		&stats.Experience, &stats.Comprehension,
 		&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status, &stats.Stories,
@@ -186,7 +213,6 @@ func (db *DB) UpdateCharacterStats(ctx context.Context, stats *CharacterStats) e
 		UPDATE character_stats SET
 			name = $2, realm = $3, realm_level = $4,
 			spiritual_roots = $5, spirit_sense = $6, physique = $7, demonic_aura = $8, taoist_name = $9,
-			hp = $10, max_hp = $11, mp = $12, max_mp = $13,
 			attack = $14, defense = $15, speed = $16, luck = $17,
 			experience = $18, comprehension = $19,
 			age = $20, lifespan = $21, location = $22, status = $23, stories = $24
@@ -196,11 +222,103 @@ func (db *DB) UpdateCharacterStats(ctx context.Context, stats *CharacterStats) e
 	_, err = db.GetPool().Exec(ctx, query,
 		stats.UserID, stats.Name, stats.Realm, stats.RealmLevel,
 		spiritualRootsJSON, stats.SpiritSense, stats.Physique, stats.DemonicAura, stats.TaoistName,
-		stats.HP, stats.MaxHP, stats.MP, stats.MaxMP,
 		stats.Attack, stats.Defense, stats.Speed, stats.Luck,
 		stats.Experience, stats.Comprehension,
 		stats.Age, stats.Lifespan, stats.Location, stats.Status, stats.Stories,
 	)
+	return err
+}
+
+// UpdateCharacterStatsPartial 部分更新人物属性，只更新非nil的字段
+func (db *DB) UpdateCharacterStatsPartial(ctx context.Context, update *CharacterStatsUpdate) error {
+	setParts := []string{}
+	args := []interface{}{update.UserID}
+	argIndex := 2
+
+	// 动态构建SET子句
+	if update.Realm != nil {
+		setParts = append(setParts, fmt.Sprintf("realm = $%d", argIndex))
+		args = append(args, *update.Realm)
+		argIndex++
+	}
+	if update.RealmLevel != nil {
+		setParts = append(setParts, fmt.Sprintf("realm_level = $%d", argIndex))
+		args = append(args, *update.RealmLevel)
+		argIndex++
+	}
+	if update.SpiritSense != nil {
+		setParts = append(setParts, fmt.Sprintf("spirit_sense = $%d", argIndex))
+		args = append(args, *update.SpiritSense)
+		argIndex++
+	}
+	if update.Physique != nil {
+		setParts = append(setParts, fmt.Sprintf("physique = $%d", argIndex))
+		args = append(args, *update.Physique)
+		argIndex++
+	}
+	if update.DemonicAura != nil {
+		setParts = append(setParts, fmt.Sprintf("demonic_aura = $%d", argIndex))
+		args = append(args, *update.DemonicAura)
+		argIndex++
+	}
+	if update.Attack != nil {
+		setParts = append(setParts, fmt.Sprintf("attack = $%d", argIndex))
+		args = append(args, *update.Attack)
+		argIndex++
+	}
+	if update.Defense != nil {
+		setParts = append(setParts, fmt.Sprintf("defense = $%d", argIndex))
+		args = append(args, *update.Defense)
+		argIndex++
+	}
+	if update.Speed != nil {
+		setParts = append(setParts, fmt.Sprintf("speed = $%d", argIndex))
+		args = append(args, *update.Speed)
+		argIndex++
+	}
+	if update.Luck != nil {
+		setParts = append(setParts, fmt.Sprintf("luck = $%d", argIndex))
+		args = append(args, *update.Luck)
+		argIndex++
+	}
+	if update.Comprehension != nil {
+		setParts = append(setParts, fmt.Sprintf("comprehension = $%d", argIndex))
+		args = append(args, *update.Comprehension)
+		argIndex++
+	}
+	if update.Lifespan != nil {
+		setParts = append(setParts, fmt.Sprintf("lifespan = $%d", argIndex))
+		args = append(args, *update.Lifespan)
+		argIndex++
+	}
+	if update.Location != nil {
+		setParts = append(setParts, fmt.Sprintf("location = $%d", argIndex))
+		args = append(args, *update.Location)
+		argIndex++
+	}
+	if update.Status != nil {
+		setParts = append(setParts, fmt.Sprintf("status = $%d", argIndex))
+		args = append(args, *update.Status)
+		argIndex++
+	}
+	if update.Stories != nil {
+		setParts = append(setParts, fmt.Sprintf("stories = CASE WHEN stories IS NULL OR stories = '' THEN $%d ELSE stories || '\n' || $%d END", argIndex, argIndex))
+		args = append(args, *update.Stories)
+		argIndex++
+	}
+
+	// 如果没有要更新的字段，直接返回
+	if len(setParts) == 0 {
+		return nil
+	}
+
+	// 构建完整的UPDATE语句
+	query := fmt.Sprintf(`
+		UPDATE character_stats SET %s
+		WHERE user_id = $1
+	`, strings.Join(setParts, ", "))
+
+	_, err := db.GetPool().Exec(ctx, query, args...)
 	return err
 }
 
@@ -275,28 +393,6 @@ func (db *DB) SetTaoistName(ctx context.Context, userID int, taoistName string) 
 	return err
 }
 
-// UpdateCharacterHP 更新生命值
-func (db *DB) UpdateCharacterHP(ctx context.Context, userID int, hp int) error {
-	query := `
-		UPDATE character_stats 
-		SET hp = GREATEST(0, LEAST($2, max_hp))
-		WHERE user_id = $1
-	`
-	_, err := db.GetPool().Exec(ctx, query, userID, hp)
-	return err
-}
-
-// UpdateCharacterMP 更新法力值
-func (db *DB) UpdateCharacterMP(ctx context.Context, userID int, mp int) error {
-	query := `
-		UPDATE character_stats 
-		SET mp = GREATEST(0, LEAST($2, max_mp))
-		WHERE user_id = $1
-	`
-	_, err := db.GetPool().Exec(ctx, query, userID, mp)
-	return err
-}
-
 // AddExperience 增加修炼经验
 func (db *DB) AddExperience(ctx context.Context, userID int, exp int64) error {
 	query := `
@@ -338,7 +434,6 @@ func (db *DB) GetCharactersByRealm(ctx context.Context, realm string) ([]*Charac
 	query := `
 		SELECT user_id, name, realm, realm_level,
 			spiritual_roots, spirit_sense, physique, demonic_aura, taoist_name,
-			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
 			age, lifespan, location, status, stories
@@ -360,7 +455,6 @@ func (db *DB) GetCharactersByRealm(ctx context.Context, realm string) ([]*Charac
 		err := rows.Scan(
 			&stats.UserID, &stats.Name, &stats.Realm, &stats.RealmLevel,
 			&spiritualRootsJSON, &stats.SpiritSense, &stats.Physique, &stats.DemonicAura, &stats.TaoistName,
-			&stats.HP, &stats.MaxHP, &stats.MP, &stats.MaxMP,
 			&stats.Attack, &stats.Defense, &stats.Speed, &stats.Luck,
 			&stats.Experience, &stats.Comprehension,
 			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status, &stats.Stories,
@@ -391,7 +485,6 @@ func (db *DB) GetCharactersByLocation(ctx context.Context, location string) ([]*
 	query := `
 		SELECT user_id, name, realm, realm_level,
 			spiritual_roots, spirit_sense, physique, demonic_aura, taoist_name,
-			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
 			age, lifespan, location, status, stories
@@ -413,7 +506,6 @@ func (db *DB) GetCharactersByLocation(ctx context.Context, location string) ([]*
 		err := rows.Scan(
 			&stats.UserID, &stats.Name, &stats.Realm, &stats.RealmLevel,
 			&spiritualRootsJSON, &stats.SpiritSense, &stats.Physique, &stats.DemonicAura, &stats.TaoistName,
-			&stats.HP, &stats.MaxHP, &stats.MP, &stats.MaxMP,
 			&stats.Attack, &stats.Defense, &stats.Speed, &stats.Luck,
 			&stats.Experience, &stats.Comprehension,
 			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status, &stats.Stories,
@@ -444,7 +536,6 @@ func (db *DB) GetCharactersByTaoistName(ctx context.Context, taoistName string) 
 	query := `
 		SELECT user_id, name, realm, realm_level,
 			spiritual_roots, spirit_sense, physique, demonic_aura, taoist_name,
-			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
 			age, lifespan, location, status, stories
@@ -466,7 +557,6 @@ func (db *DB) GetCharactersByTaoistName(ctx context.Context, taoistName string) 
 		err := rows.Scan(
 			&stats.UserID, &stats.Name, &stats.Realm, &stats.RealmLevel,
 			&spiritualRootsJSON, &stats.SpiritSense, &stats.Physique, &stats.DemonicAura, &stats.TaoistName,
-			&stats.HP, &stats.MaxHP, &stats.MP, &stats.MaxMP,
 			&stats.Attack, &stats.Defense, &stats.Speed, &stats.Luck,
 			&stats.Experience, &stats.Comprehension,
 			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status, &stats.Stories,
@@ -519,7 +609,6 @@ func (db *DB) GetCharactersBySpiritualRoot(ctx context.Context, rootType string,
 	query := `
 		SELECT user_id, name, realm, realm_level,
 			spiritual_roots, spirit_sense, physique, demonic_aura, taoist_name,
-			hp, max_hp, mp, max_mp,
 			attack, defense, speed, luck,
 			experience, comprehension,
 			age, lifespan, location, status, stories
@@ -542,7 +631,6 @@ func (db *DB) GetCharactersBySpiritualRoot(ctx context.Context, rootType string,
 		err := rows.Scan(
 			&stats.UserID, &stats.Name, &stats.Realm, &stats.RealmLevel,
 			&spiritualRootsJSON, &stats.SpiritSense, &stats.Physique, &stats.DemonicAura, &stats.TaoistName,
-			&stats.HP, &stats.MaxHP, &stats.MP, &stats.MaxMP,
 			&stats.Attack, &stats.Defense, &stats.Speed, &stats.Luck,
 			&stats.Experience, &stats.Comprehension,
 			&stats.Age, &stats.Lifespan, &stats.Location, &stats.Status, &stats.Stories,

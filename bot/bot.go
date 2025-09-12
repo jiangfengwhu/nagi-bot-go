@@ -72,6 +72,7 @@ func (b *Bot) setupHandlers() {
 	needAuth := b.Group()
 	needAuth.Use(Auth(b.db, b.Bot))
 	needAuth.Handle("/start", b.handleStart)
+	needAuth.Handle("/pack", b.handleInventory)
 	needAuth.Handle(tele.OnText, b.handleChat)
 	needAuth.Handle(tele.OnPhoto, b.handleFile)
 	needAuth.Handle(tele.OnAudio, b.handleFile)
@@ -79,6 +80,15 @@ func (b *Bot) setupHandlers() {
 	needAuth.Handle(tele.OnDocument, b.handleFile)
 	needAuth.Handle("/c", b.handleRecharge)
 	needAuth.Handle("/reg", b.handleRegister)
+}
+
+func (b *Bot) handleInventory(c tele.Context) error {
+	user := c.Get("db_user").(*database.User)
+	inventory, err := b.db.GetUserInventory(context.Background(), user.ID)
+	if err != nil {
+		return c.Reply(fmt.Sprintf("获取背包物品失败: %v", err))
+	}
+	return c.Reply(formatInventoryInfo(inventory))
 }
 
 func (b *Bot) handleRecharge(c tele.Context) error {
@@ -115,7 +125,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 	if player == nil {
 		return c.Reply("您还没有注册角色，请使用/reg 角色名 注册之后进行游戏")
 	} else {
-		return c.Reply(fmt.Sprintf("欢迎回来：\n\n灵石: %d\n\n角色信息: %s", user.TotalRechargedToken-user.TotalUsedToken, player))
+		return c.Reply(fmt.Sprintf("欢迎回来：\n\n灵石: %d\n\n角色信息: %s", user.TotalRechargedToken-user.TotalUsedToken, formatPlayerInfo(player)))
 	}
 }
 
@@ -284,6 +294,32 @@ func (b *Bot) handleChat(c tele.Context) error {
 					return nil
 				}
 				b.Edit(message, llmResult+"\n\nGoogle搜索结果："+searchResult)
+				b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromFunctionCall(tool.Name, tool.Args)})
+				nextPart := genai.NewPartFromFunctionResponse(tool.Name, map[string]any{
+					"text": searchResult,
+				})
+				nextParts = append(nextParts, nextPart)
+			} else if tool.Name == string(llm.ToolUpdatePlayer) {
+				b.Edit(message, llmResult+"\n\n正在更新玩家信息...")
+				searchResult, err := llm.UpdatePlayer(b.db, user.ID, tool.Args)
+				if err != nil {
+					b.Edit(message, llmResult+fmt.Sprintf("更新玩家信息失败: %v", err))
+					return nil
+				}
+				b.Edit(message, llmResult+"\n\n玩家信息更新成功："+searchResult)
+				b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromFunctionCall(tool.Name, tool.Args)})
+				nextPart := genai.NewPartFromFunctionResponse(tool.Name, map[string]any{
+					"text": searchResult,
+				})
+				nextParts = append(nextParts, nextPart)
+			} else if tool.Name == string(llm.ToolUpdateInventory) {
+				b.Edit(message, llmResult+"\n\n正在更新背包物品...")
+				searchResult, err := llm.UpdateInventory(b.db, user.ID, tool.Args)
+				if err != nil {
+					b.Edit(message, llmResult+fmt.Sprintf("更新背包物品失败: %v", err))
+					return nil
+				}
+				b.Edit(message, llmResult+"\n\n背包物品更新成功："+searchResult)
 				b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromFunctionCall(tool.Name, tool.Args)})
 				nextPart := genai.NewPartFromFunctionResponse(tool.Name, map[string]any{
 					"text": searchResult,

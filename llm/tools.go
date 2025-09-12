@@ -7,7 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
+
+	"jiangfengwhu/nagi-bot-go/database"
 
 	"google.golang.org/genai"
 )
@@ -67,4 +70,99 @@ func (s *LLMService) GoogleSearch(prompt string) (string, error) {
 
 	// 整合有用信息
 	return formatSearchResults(&searchResponse), nil
+}
+
+func UpdatePlayer(db *database.DB, userID int, args map[string]any) (string, error) {
+	ctx := context.Background()
+
+	// 解析JSON参数到部分更新结构体
+	var updateParams database.CharacterStatsUpdate
+	argsJSON, err := json.Marshal(args)
+	if err != nil {
+		return "", fmt.Errorf("解析更新参数失败: %v", err)
+	}
+	if err := json.Unmarshal(argsJSON, &updateParams); err != nil {
+		return "", fmt.Errorf("解析更新参数失败: %v", err)
+	}
+
+	// 设置用户ID
+	updateParams.UserID = userID
+
+	// 调用部分更新方法
+	if err := db.UpdateCharacterStatsPartial(ctx, &updateParams); err != nil {
+		return "", fmt.Errorf("更新玩家信息失败: %v", err)
+	}
+
+	// 构建更新成功的消息
+	updateFields := []string{}
+	if updateParams.Realm != nil {
+		updateFields = append(updateFields, fmt.Sprintf("境界: %s", *updateParams.Realm))
+	}
+	if updateParams.RealmLevel != nil {
+		updateFields = append(updateFields, fmt.Sprintf("境界等级: %d", *updateParams.RealmLevel))
+	}
+	if updateParams.SpiritSense != nil {
+		updateFields = append(updateFields, fmt.Sprintf("神识: %d", *updateParams.SpiritSense))
+	}
+	if updateParams.Physique != nil {
+		updateFields = append(updateFields, fmt.Sprintf("根骨: %d", *updateParams.Physique))
+	}
+	if updateParams.DemonicAura != nil {
+		updateFields = append(updateFields, fmt.Sprintf("煞气: %d", *updateParams.DemonicAura))
+	}
+	if updateParams.Attack != nil {
+		updateFields = append(updateFields, fmt.Sprintf("攻击力: %d", *updateParams.Attack))
+	}
+	if updateParams.Defense != nil {
+		updateFields = append(updateFields, fmt.Sprintf("防御力: %d", *updateParams.Defense))
+	}
+	if updateParams.Speed != nil {
+		updateFields = append(updateFields, fmt.Sprintf("速度: %d", *updateParams.Speed))
+	}
+	if updateParams.Luck != nil {
+		updateFields = append(updateFields, fmt.Sprintf("幸运值: %d", *updateParams.Luck))
+	}
+	if updateParams.Comprehension != nil {
+		updateFields = append(updateFields, fmt.Sprintf("悟性: %d", *updateParams.Comprehension))
+	}
+	if updateParams.Lifespan != nil {
+		updateFields = append(updateFields, fmt.Sprintf("寿命: %d", *updateParams.Lifespan))
+	}
+	if updateParams.Location != nil {
+		updateFields = append(updateFields, fmt.Sprintf("位置: %s", *updateParams.Location))
+	}
+	if updateParams.Status != nil {
+		updateFields = append(updateFields, fmt.Sprintf("状态: %s", *updateParams.Status))
+	}
+	if updateParams.Stories != nil {
+		updateFields = append(updateFields, fmt.Sprintf("新增经历: %s", *updateParams.Stories))
+	}
+
+	if len(updateFields) == 0 {
+		return "没有需要更新的字段", nil
+	}
+
+	return fmt.Sprintf("玩家信息更新成功，已更新: %s", strings.Join(updateFields, ", ")), nil
+}
+
+func UpdateInventory(db *database.DB, userID int, args map[string]any) (string, error) {
+	ctx := context.Background()
+
+	// 解析JSON参数到部分更新结构体
+	var updateParams []*database.InventoryItem
+	argsJSON, err := json.Marshal(args["items"])
+	fmt.Println("argsJSON", string(argsJSON))
+	if err != nil {
+		return "", fmt.Errorf("解析更新参数失败: %v", err)
+	}
+	if err := json.Unmarshal(argsJSON, &updateParams); err != nil {
+		return "", fmt.Errorf("解析更新参数失败: %v", err)
+	}
+
+	// 调用部分更新方法
+	if err := db.UpdateInventory(ctx, userID, updateParams); err != nil {
+		return "", fmt.Errorf("更新背包物品失败: %v", err)
+	}
+
+	return "背包物品更新成功", nil
 }

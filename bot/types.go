@@ -14,8 +14,6 @@ type CreatePlayerParams struct {
 	Comprehension   int                      `json:"comprehension"`
 	Luck            int                      `json:"luck"`
 	SpiritSense     int                      `json:"spirit_sense"`
-	MaxHP           int                      `json:"max_hp"`
-	MaxMP           int                      `json:"max_mp"`
 	Attack          int                      `json:"attack"`
 	Defense         int                      `json:"defense"`
 	Speed           int                      `json:"speed"`

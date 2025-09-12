@@ -179,8 +179,6 @@ func formatPlayerInfo(player *database.CharacterStats) string {
 		fmt.Sprintf("💪 角色根骨: %d\n", player.Physique) + "\n" +
 		fmt.Sprintf("👹 角色煞气: %d\n", player.DemonicAura) + "\n" +
 		fmt.Sprintf("👺 角色道号: %s\n", player.TaoistName) + "\n" +
-		fmt.Sprintf("💜 角色生命值: %d\n", player.HP) + "\n" +
-		fmt.Sprintf("💚 角色法力值: %d\n", player.MP) + "\n" +
 		fmt.Sprintf("💪 角色攻击力: %d\n", player.Attack) + "\n" +
 		fmt.Sprintf("🛡️ 角色防御力: %d\n", player.Defense) + "\n" +
 		fmt.Sprintf("🏃 角色速度: %d\n", player.Speed) + "\n" +
@@ -205,6 +203,9 @@ func formatInventoryInfo(inventory []*database.InventoryItem) string {
 			fmt.Sprintf("🔍 物品属性: %s\n", item.Properties) + "\n" +
 			fmt.Sprintf("📝 物品描述: %s\n", item.Description)
 		inventoryInfo += "\n"
+	}
+	if inventoryInfo == "" {
+		inventoryInfo = "背包物品为空"
 	}
 	return inventoryInfo
 }

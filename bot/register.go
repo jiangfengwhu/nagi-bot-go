@@ -86,14 +86,6 @@ func (b *Bot) handleRegister(c tele.Context) error {
 					Type:        genai.TypeInteger,
 					Description: "神识强度，根据灵根（特别是精神系灵根如空间、时间）和悟性计算。影响感知能力和法术威力",
 				},
-				"max_hp": {
-					Type:        genai.TypeInteger,
-					Description: "生命值，主要基于根骨和体质型灵根（土、木）计算，特殊体质可能有加成",
-				},
-				"max_mp": {
-					Type:        genai.TypeInteger,
-					Description: "法力值，基于灵根总体强度和特殊灵根（如水、冰、雷）计算",
-				},
 				"attack": {
 					Type:        genai.TypeInteger,
 					Description: "攻击力，主要基于金灵根、根骨，攻击型特殊灵根（雷、火）有加成",
@@ -154,7 +146,7 @@ func (b *Bot) handleRegister(c tele.Context) error {
 					Description: "初始背包物品列表，每个元素包含物品名称，数量，类型，品质，等级，属性，描述等，列表是根据角色的命格生成，有好有坏，全凭命理",
 				},
 			},
-			Required: []string{"player_name", "spiritual_roots", "physique", "comprehension", "luck", "spirit_sense", "max_hp", "max_mp", "attack", "defense", "speed", "lifespan", "background_story", "init_inventory"},
+			Required: []string{"player_name", "spiritual_roots", "physique", "comprehension", "luck", "spirit_sense", "attack", "defense", "speed", "lifespan", "background_story", "init_inventory"},
 		},
 	}
 	message, _ := b.Reply(c.Message(), "正在生成角色...")
@@ -198,11 +190,7 @@ func CreatePlayer(db *database.DB, userID int, args string) (*database.Character
 		SpiritSense:    params.SpiritSense,
 		Physique:       params.Physique,
 		DemonicAura:    0,
-		TaoistName:     nil, // 练气期没有道号
-		HP:             params.MaxHP,
-		MaxHP:          params.MaxHP,
-		MP:             params.MaxMP,
-		MaxMP:          params.MaxMP,
+		TaoistName:     "", // 练气期没有道号
 		Attack:         params.Attack,
 		Defense:        params.Defense,
 		Speed:          params.Speed,
@@ -228,7 +216,7 @@ func CreatePlayer(db *database.DB, userID int, args string) (*database.Character
 			Properties:   item.Properties,
 			Description:  item.Description,
 			ObtainedFrom: "系统赠送",
-			ObtainedAt:   time.Now(),
+			ObtainedAt:   time.Now().Format("2006-01-02 15:04:05"),
 		})
 	}
 

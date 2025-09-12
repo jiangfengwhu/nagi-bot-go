@@ -10,16 +10,33 @@ import (
 
 // InventoryItem 背包物品结构
 type InventoryItem struct {
-	UserID       int       `json:"user_id"`
-	ItemName     string    `json:"item_name"`
-	ItemType     string    `json:"item_type"`
-	Quality      string    `json:"quality"`
-	Level        int       `json:"level"`
-	Quantity     int       `json:"quantity"`
-	Properties   string    `json:"properties"`
-	Description  string    `json:"description"`
-	ObtainedFrom string    `json:"obtained_from"`
-	ObtainedAt   time.Time `json:"obtained_at"`
+	UserID       int    `json:"user_id,omitempty"`
+	ItemName     string `json:"item_name"`
+	ItemType     string `json:"item_type"`
+	Quality      string `json:"quality"`
+	Level        int    `json:"level"`
+	Quantity     int    `json:"quantity"`
+	Properties   string `json:"properties"`
+	Description  string `json:"description"`
+	ObtainedFrom string `json:"obtained_from"`
+	ObtainedAt   string `json:"obtained_at"`
+}
+
+func (db *DB) UpdateInventory(ctx context.Context, userID int, inventoryItems []*InventoryItem) error {
+	tx, err := db.GetPool().Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	for _, item := range inventoryItems {
+		item.UserID = userID
+		err = db.AddInventoryItemsBatch(ctx, []*InventoryItem{item})
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // AddInventoryItemsBatch 批量添加物品到背包

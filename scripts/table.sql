@@ -41,12 +41,6 @@ CREATE TABLE IF NOT EXISTS character_stats (
 
     -- 道号
     taoist_name VARCHAR(50),
-
-    -- 基础属性
-    hp INTEGER NOT NULL DEFAULT 100,           -- 生命值
-    max_hp INTEGER NOT NULL DEFAULT 100,       -- 最大生命值
-    mp INTEGER NOT NULL DEFAULT 50,            -- 法力值
-    max_mp INTEGER NOT NULL DEFAULT 50,        -- 最大法力值
     
     -- 战斗属性
     attack INTEGER NOT NULL DEFAULT 10,        -- 攻击力
@@ -93,7 +87,7 @@ CREATE TABLE IF NOT EXISTS inventory (
     
     -- 获得信息
     obtained_from VARCHAR(100), -- 获得来源 (shop, monster, quest, craft)
-    obtained_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    obtained_at VARCHAR(50) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 修炼功法表
