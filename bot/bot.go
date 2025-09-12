@@ -243,6 +243,17 @@ func (b *Bot) handleChat(c tele.Context) error {
 				c.Reply(fmt.Sprintf("获取流失败: %v", err))
 				continue
 			}
+
+			// 安全检查：确保Candidates数组不为空
+			if len(chunk.Candidates) == 0 {
+				continue
+			}
+
+			// 安全检查：确保Content和Parts不为空
+			if chunk.Candidates[0].Content == nil || len(chunk.Candidates[0].Content.Parts) == 0 {
+				continue
+			}
+
 			part := chunk.Candidates[0].Content.Parts[0]
 			tmpResult += part.Text
 			thoughtSignature = append(thoughtSignature, part.ThoughtSignature...)

@@ -10,16 +10,16 @@ import (
 
 // InventoryItem 背包物品结构
 type InventoryItem struct {
-	UserID       int    `json:"user_id,omitempty"`
-	ItemName     string `json:"item_name"`
-	ItemType     string `json:"item_type"`
-	Quality      string `json:"quality"`
-	Level        int    `json:"level"`
-	Quantity     int    `json:"quantity"`
-	Properties   string `json:"properties"`
-	Description  string `json:"description"`
-	ObtainedFrom string `json:"obtained_from"`
-	ObtainedAt   string `json:"obtained_at"`
+	UserID       int       `json:"user_id,omitempty"`
+	ItemName     string    `json:"item_name"`
+	ItemType     string    `json:"item_type"`
+	Quality      string    `json:"quality"`
+	Level        int       `json:"level"`
+	Quantity     int       `json:"quantity"`
+	Properties   string    `json:"properties"`
+	Description  string    `json:"description"`
+	ObtainedFrom string    `json:"obtained_from"`
+	ObtainedAt   time.Time `json:"obtained_at,omitzero"`
 }
 
 func (db *DB) UpdateInventory(ctx context.Context, userID int, inventoryItems []*InventoryItem) error {
@@ -83,9 +83,10 @@ func (db *DB) AddInventoryItemsBatch(ctx context.Context, items []*InventoryItem
 		}
 	}
 
-	// 准备批量插入和更新的数据
+	// 准备批量插入、更新和删除的数据
 	var itemsToInsert []*InventoryItem
 	var itemsToUpdate []*InventoryItem
+	var itemsToDelete []*InventoryItem
 
 	for _, item := range items {
 		if existingItem, exists := userItemMap[item.UserID][item.ItemName]; exists {
@@ -93,8 +94,18 @@ func (db *DB) AddInventoryItemsBatch(ctx context.Context, items []*InventoryItem
 			existingItem.Quantity += item.Quantity
 			itemsToUpdate = append(itemsToUpdate, existingItem)
 		} else {
-			// 新物品，准备插入
-			itemsToInsert = append(itemsToInsert, item)
+			// 新物品处理
+			if item.Quantity < 0 {
+				// 如果是负数量的新物品，添加到删除列表（删除可能存在的记录）
+				itemsToDelete = append(itemsToDelete, item)
+			} else {
+				// 正数量的新物品，准备插入
+				// 如果ObtainedAt为零值，使用当前时间
+				if item.ObtainedAt.IsZero() {
+					item.ObtainedAt = time.Now()
+				}
+				itemsToInsert = append(itemsToInsert, item)
+			}
 		}
 	}
 
@@ -109,6 +120,14 @@ func (db *DB) AddInventoryItemsBatch(ctx context.Context, items []*InventoryItem
 	// 批量更新现有物品数量
 	if len(itemsToUpdate) > 0 {
 		err = db.batchUpdateInventoryItemQuantity(ctx, tx, itemsToUpdate)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 批量删除物品
+	if len(itemsToDelete) > 0 {
+		err = db.batchDeleteInventoryItems(ctx, tx, itemsToDelete)
 		if err != nil {
 			return err
 		}
@@ -178,6 +197,33 @@ func (db *DB) batchInsertInventoryItems(ctx context.Context, tx pgx.Tx, items []
 	defer results.Close()
 
 	// 处理所有批量插入结果
+	for range items {
+		_, err := results.Exec()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// batchDeleteInventoryItems 批量删除物品
+func (db *DB) batchDeleteInventoryItems(ctx context.Context, tx pgx.Tx, items []*InventoryItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	query := `DELETE FROM inventory WHERE user_id = $1 AND item_name = $2`
+
+	batch := &pgx.Batch{}
+	for _, item := range items {
+		batch.Queue(query, item.UserID, item.ItemName)
+	}
+
+	results := tx.SendBatch(ctx, batch)
+	defer results.Close()
+
+	// 处理所有批量删除结果
 	for range items {
 		_, err := results.Exec()
 		if err != nil {

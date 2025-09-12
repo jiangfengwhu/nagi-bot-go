@@ -216,7 +216,7 @@ func CreatePlayer(db *database.DB, userID int, args string) (*database.Character
 			Properties:   item.Properties,
 			Description:  item.Description,
 			ObtainedFrom: "系统赠送",
-			ObtainedAt:   time.Now().Format("2006-01-02 15:04:05"),
+			ObtainedAt:   time.Now(),
 		})
 	}
 

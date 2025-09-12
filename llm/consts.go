@@ -110,12 +110,8 @@ var ToolsDescMap = map[ToolEnum]*genai.FunctionDeclaration{
 								Type:        genai.TypeString,
 								Description: "物品的获取来源",
 							},
-							"obtained_at": {
-								Type:        genai.TypeString,
-								Description: "物品的获取时间",
-							},
 						},
-						Required: []string{"item_name", "quantity", "item_type", "quality", "level", "properties", "description", "obtained_from", "obtained_at"},
+						Required: []string{"item_name", "quantity", "item_type", "quality", "level", "properties", "description", "obtained_from"},
 					},
 					Description: "物品列表，每个元素包含物品名称，数量，类型，品质，等级，属性，描述等",
 				},

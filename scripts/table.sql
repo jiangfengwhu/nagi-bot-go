@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS inventory (
     
     -- 获得信息
     obtained_from VARCHAR(100), -- 获得来源 (shop, monster, quest, craft)
-    obtained_at VARCHAR(50) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    obtained_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 修炼功法表
