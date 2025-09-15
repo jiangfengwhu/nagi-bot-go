@@ -108,7 +108,7 @@ func (b *Bot) handleRecharge(c tele.Context) error {
 	if err != nil {
 		return c.Reply("请输入正确的金额")
 	}
-	err = b.db.UpdateUserTotalRechargedToken(context.Background(), id, amount)
+	err = b.db.UpdateUserTotalRechargedToken(context.Background(), int(id), amount)
 	if err != nil {
 		return c.Reply(fmt.Sprintf("充值失败: %v", err))
 	}
@@ -188,6 +188,9 @@ func (b *Bot) handleChat(c tele.Context) error {
 	message, err := b.Reply(c.Message(), "正在思考...")
 	if err != nil {
 		return c.Reply(fmt.Sprintf("发送消息失败: %v", err))
+	}
+	if user.TotalRechargedToken-user.TotalUsedToken <= 0 {
+		return c.Reply("您的灵石不足，请先充值")
 	}
 	systemPrompt := b.config.Prompts["system_prompt"] + fmt.Sprintf("\n\n玩家%s的信息如下：\n\n%s\n\n", player.Name, player)
 	history := []*genai.Content{
@@ -336,10 +339,23 @@ func (b *Bot) handleChat(c tele.Context) error {
 					"text": searchResult,
 				})
 				nextParts = append(nextParts, nextPart)
+			} else if tool.Name == string(llm.ToolInAppPurchase) {
+				b.Edit(message, llmResult+"\n\n正在购买物品...")
+				searchResult, err := llm.InAppPurchase(b.db, user.ID, tool.Args)
+				if err != nil {
+					b.Edit(message, llmResult+fmt.Sprintf("购买物品失败: %v", err))
+					return nil
+				}
+				b.Edit(message, llmResult+"\n\n物品购买成功："+searchResult)
+				b.db.AddMessage(ctx, user.ID, "model", []*genai.Part{genai.NewPartFromFunctionCall(tool.Name, tool.Args)})
+				nextPart := genai.NewPartFromFunctionResponse(tool.Name, map[string]any{
+					"text": searchResult,
+				})
+				nextParts = append(nextParts, nextPart)
 			}
 		}
 	}
-	b.db.UpdateUserTotalUsedToken(ctx, user.TgId, int64(totalToken))
+	b.db.UpdateUserTotalUsedToken(ctx, user.ID, int64(totalToken))
 
 	return nil
 }

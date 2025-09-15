@@ -2,6 +2,46 @@ package llm
 
 import "google.golang.org/genai"
 
+var InventoryItemSchema = &genai.Schema{
+	Type:        genai.TypeObject,
+	Description: "物品列表",
+	Properties: map[string]*genai.Schema{
+		"item_name": {
+			Type:        genai.TypeString,
+			Description: "物品的名称",
+		},
+		"quantity": {
+			Type:        genai.TypeInteger,
+			Description: "物品的数量，添加时为正数，删除时为负数",
+		},
+		"item_type": {
+			Type:        genai.TypeString,
+			Description: "物品的类型，比如法宝，丹药，符箓等",
+		},
+		"quality": {
+			Type:        genai.TypeString,
+			Description: "物品的品质，比如普通，高级，稀有，史诗，传说",
+		},
+		"level": {
+			Type:        genai.TypeInteger,
+			Description: "物品的等级，比如1品，珍品，远古，玄天，通天等",
+		},
+		"properties": {
+			Type:        genai.TypeString,
+			Description: "物品的属性，比如攻击力，防御力，特殊效果等",
+		},
+		"description": {
+			Type:        genai.TypeString,
+			Description: "物品的描述",
+		},
+		"obtained_from": {
+			Type:        genai.TypeString,
+			Description: "物品的获取来源",
+		},
+	},
+	Required: []string{"item_name", "quantity", "item_type", "quality", "level", "properties", "description", "obtained_from"},
+}
+
 var TextSafetySettings = []*genai.SafetySetting{
 	{
 		Category:  genai.HarmCategoryHateSpeech,
@@ -31,6 +71,7 @@ const (
 	ToolGoogleSearch    ToolEnum = "google_search"
 	ToolUpdatePlayer    ToolEnum = "update_player"
 	ToolUpdateInventory ToolEnum = "update_inventory"
+	ToolInAppPurchase   ToolEnum = "in_app_purchase"
 )
 
 var ToolsDescMap = map[ToolEnum]*genai.FunctionDeclaration{
@@ -68,51 +109,13 @@ var ToolsDescMap = map[ToolEnum]*genai.FunctionDeclaration{
 	},
 	ToolUpdateInventory: {
 		Name:        string(ToolUpdateInventory),
-		Description: "更新玩家背包中的物品",
+		Description: "更新玩家背包中的物品，不包含灵石，灵石是该游戏世界的通用货币，不能通过该工具更新灵石",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
 				"items": {
-					Type: genai.TypeArray,
-					Items: &genai.Schema{
-						Type:        genai.TypeObject,
-						Description: "物品列表, 添加时quantity为正数，删除时quantity为负数",
-						Properties: map[string]*genai.Schema{
-							"item_name": {
-								Type:        genai.TypeString,
-								Description: "物品的名称",
-							},
-							"quantity": {
-								Type:        genai.TypeInteger,
-								Description: "物品的数量",
-							},
-							"item_type": {
-								Type:        genai.TypeString,
-								Description: "物品的类型，比如法宝，丹药，符箓等",
-							},
-							"quality": {
-								Type:        genai.TypeString,
-								Description: "物品的品质，比如普通，高级，稀有，史诗，传说",
-							},
-							"level": {
-								Type:        genai.TypeInteger,
-								Description: "物品的等级，比如1品，珍品，远古，玄天，通天等",
-							},
-							"properties": {
-								Type:        genai.TypeString,
-								Description: "物品的属性，比如攻击力，防御力，特殊效果等",
-							},
-							"description": {
-								Type:        genai.TypeString,
-								Description: "物品的描述",
-							},
-							"obtained_from": {
-								Type:        genai.TypeString,
-								Description: "物品的获取来源",
-							},
-						},
-						Required: []string{"item_name", "quantity", "item_type", "quality", "level", "properties", "description", "obtained_from"},
-					},
+					Type:        genai.TypeArray,
+					Items:       InventoryItemSchema,
 					Description: "物品列表，每个元素包含物品名称，数量，类型，品质，等级，属性，描述等",
 				},
 			},
@@ -182,6 +185,24 @@ var ToolsDescMap = map[ToolEnum]*genai.FunctionDeclaration{
 				},
 			},
 			Required: []string{},
+		},
+	},
+	ToolInAppPurchase: {
+		Name:        string(ToolInAppPurchase),
+		Description: "在游戏中通过灵石购买物品(内购系统)",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"items": {
+					Type:        genai.TypeArray,
+					Items:       InventoryItemSchema,
+					Description: "玩家购买的物品列表",
+				},
+				"cost": {
+					Type:        genai.TypeInteger,
+					Description: "总价，需要支付的灵石数量，不宜过低",
+				},
+			},
 		},
 	},
 }

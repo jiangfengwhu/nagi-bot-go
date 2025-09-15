@@ -103,8 +103,8 @@ func (c *CharacterStats) String() string {
 	return string(json)
 }
 
-// CreateCharacterStats 创建人物属性
-func (db *DB) CreateCharacterStats(ctx context.Context, stats *CharacterStats) error {
+// CreateCharacterStatsInTx 在事务中创建人物属性
+func (db *DB) CreateCharacterStatsInTx(ctx context.Context, tx pgx.Tx, stats *CharacterStats) error {
 	var spiritualRootsJSON []byte
 	var err error
 
@@ -128,11 +128,11 @@ func (db *DB) CreateCharacterStats(ctx context.Context, stats *CharacterStats) e
 			$10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19,
-			$20, $21, $22, $23, $24
+			$20
 		)
 	`
 
-	_, err = db.GetPool().Exec(ctx, query,
+	_, err = tx.Exec(ctx, query,
 		stats.UserID, stats.Name, stats.Realm, stats.RealmLevel,
 		spiritualRootsJSON, stats.SpiritSense, stats.Physique, stats.DemonicAura, stats.TaoistName,
 		stats.Attack, stats.Defense, stats.Speed, stats.Luck,
@@ -213,9 +213,9 @@ func (db *DB) UpdateCharacterStats(ctx context.Context, stats *CharacterStats) e
 		UPDATE character_stats SET
 			name = $2, realm = $3, realm_level = $4,
 			spiritual_roots = $5, spirit_sense = $6, physique = $7, demonic_aura = $8, taoist_name = $9,
-			attack = $14, defense = $15, speed = $16, luck = $17,
-			experience = $18, comprehension = $19,
-			age = $20, lifespan = $21, location = $22, status = $23, stories = $24
+			attack = $10, defense = $11, speed = $12, luck = $13,
+			experience = $14, comprehension = $15,
+			age = $16, lifespan = $17, location = $18, status = $19, stories = $20
 		WHERE user_id = $1
 	`
 

@@ -51,27 +51,28 @@ func (db *DB) GetUser(ctx context.Context, tgId int64) (*User, error) {
 	return &user, nil
 }
 
-func (db *DB) UpdateUserSystemPrompt(ctx context.Context, tgId int64, systemPrompt string) error {
-	query := `
-		UPDATE users
-		SET system_prompt = $1
-		WHERE tg_id = $2
-	`
-	_, err := db.GetPool().Exec(ctx, query, systemPrompt, tgId)
-	return err
-}
-
-func (db *DB) UpdateUserTotalUsedToken(ctx context.Context, tgId int64, usedToken int64) error {
+func (db *DB) UpdateUserTotalUsedToken(ctx context.Context, id int, usedToken int64) error {
 	query := `
 		UPDATE users
 		SET total_used_token = total_used_token + $1
-		WHERE tg_id = $2
+		WHERE id = $2
 	`
-	_, err := db.GetPool().Exec(ctx, query, usedToken, tgId)
+	_, err := db.GetPool().Exec(ctx, query, usedToken, id)
 	return err
 }
 
-func (db *DB) UpdateUserTotalRechargedToken(ctx context.Context, id int64, rechargedToken int64) error {
+// UpdateUserTotalUsedTokenTx 在事务中更新用户总使用token数
+func (db *DB) UpdateUserTotalUsedTokenTx(ctx context.Context, tx pgx.Tx, id int, usedToken int64) error {
+	query := `
+		UPDATE users
+		SET total_used_token = total_used_token + $1
+		WHERE id = $2
+	`
+	_, err := tx.Exec(ctx, query, usedToken, id)
+	return err
+}
+
+func (db *DB) UpdateUserTotalRechargedToken(ctx context.Context, id int, rechargedToken int64) error {
 	query := `
 		UPDATE users
 		SET total_recharged_token = total_recharged_token + $1
@@ -79,4 +80,14 @@ func (db *DB) UpdateUserTotalRechargedToken(ctx context.Context, id int64, recha
 	`
 	_, err := db.GetPool().Exec(ctx, query, rechargedToken, id)
 	return err
+}
+
+// 查看用户现有token数
+func (db *DB) GetUserTotalToken(ctx context.Context, id int) (int64, error) {
+	query := `
+		SELECT total_recharged_token - total_used_token FROM users WHERE id = $1
+	`
+	var totalToken int64
+	err := db.GetPool().QueryRow(ctx, query, id).Scan(&totalToken)
+	return totalToken, err
 }

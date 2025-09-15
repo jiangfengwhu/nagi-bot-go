@@ -8,6 +8,7 @@ import (
 
 	"encoding/json"
 	"jiangfengwhu/nagi-bot-go/database"
+	"jiangfengwhu/nagi-bot-go/llm"
 
 	"google.golang.org/genai"
 	tele "gopkg.in/telebot.v4"
@@ -107,43 +108,9 @@ func (b *Bot) handleRegister(c tele.Context) error {
 					Description: "背景故事，要结合灵根特点描述角色的出身和修仙机缘",
 				},
 				"init_inventory": {
-					Type: genai.TypeArray,
-					Items: &genai.Schema{
-						Type:        genai.TypeObject,
-						Description: "初始背包物品，根据角色的命格生成",
-						Properties: map[string]*genai.Schema{
-							"item_name": {
-								Type:        genai.TypeString,
-								Description: "物品的名称",
-							},
-							"quantity": {
-								Type:        genai.TypeInteger,
-								Description: "物品的数量",
-							},
-							"item_type": {
-								Type:        genai.TypeString,
-								Description: "物品的类型，比如法宝，丹药，符箓等",
-							},
-							"quality": {
-								Type:        genai.TypeString,
-								Description: "物品的品质，比如普通，高级，稀有，史诗，传说",
-							},
-							"level": {
-								Type:        genai.TypeInteger,
-								Description: "物品的等级，比如1品，珍品，远古，玄天，通天等",
-							},
-							"properties": {
-								Type:        genai.TypeString,
-								Description: "物品的属性，比如攻击力，防御力，特殊效果等",
-							},
-							"description": {
-								Type:        genai.TypeString,
-								Description: "物品的描述",
-							},
-						},
-						Required: []string{"item_name", "quantity", "item_type", "quality", "level", "properties", "description"},
-					},
-					Description: "初始背包物品列表，每个元素包含物品名称，数量，类型，品质，等级，属性，描述等，列表是根据角色的命格生成，有好有坏，全凭命理",
+					Type:        genai.TypeArray,
+					Items:       llm.InventoryItemSchema,
+					Description: "初始背包物品列表，每个元素包含物品名称，数量，类型，品质，等级，属性，描述等，列表是根据角色的命格生成，有好有坏，全凭命理（不包含灵石）",
 				},
 			},
 			Required: []string{"player_name", "spiritual_roots", "physique", "comprehension", "luck", "spirit_sense", "attack", "defense", "speed", "lifespan", "background_story", "init_inventory"},
@@ -215,21 +182,31 @@ func CreatePlayer(db *database.DB, userID int, args string) (*database.Character
 			Level:        item.Level,
 			Properties:   item.Properties,
 			Description:  item.Description,
-			ObtainedFrom: "系统赠送",
+			ObtainedFrom: item.ObtainedFrom,
 			ObtainedAt:   time.Now(),
 		})
 	}
 
-	err = db.AddInventoryItemsBatch(ctx, inventory)
+	tx, err := db.GetPool().Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("开始事务失败: %v", err)
+	}
+	defer tx.Rollback(ctx)
+
+	for _, item := range inventory {
+		item.UserID = userID
+	}
+
+	err = db.AddInventoryItemsBatchInTx(ctx, tx, inventory)
 	if err != nil {
 		return nil, nil, fmt.Errorf("添加物品失败: %v", err)
 	}
 
 	// 保存到数据库
-	err = db.CreateCharacterStats(ctx, stats)
+	err = db.CreateCharacterStatsInTx(ctx, tx, stats)
 	if err != nil {
 		return nil, nil, fmt.Errorf("创建角色失败: %v", err)
 	}
 
-	return stats, inventory, nil
+	return stats, inventory, tx.Commit(ctx)
 }

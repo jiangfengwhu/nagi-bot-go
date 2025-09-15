@@ -72,6 +72,7 @@ func (s *LLMService) CreateConversation(ctx context.Context, client *genai.Clien
 					ToolsDescMap[ToolGoogleSearch],
 					ToolsDescMap[ToolUpdatePlayer],
 					ToolsDescMap[ToolUpdateInventory],
+					ToolsDescMap[ToolInAppPurchase],
 				},
 			},
 		},

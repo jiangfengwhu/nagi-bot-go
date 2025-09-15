@@ -22,35 +22,11 @@ type InventoryItem struct {
 	ObtainedAt   time.Time `json:"obtained_at,omitzero"`
 }
 
-func (db *DB) UpdateInventory(ctx context.Context, userID int, inventoryItems []*InventoryItem) error {
-	tx, err := db.GetPool().Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	for _, item := range inventoryItems {
-		item.UserID = userID
-		err = db.AddInventoryItemsBatch(ctx, []*InventoryItem{item})
-		if err != nil {
-			return err
-		}
-	}
-	return tx.Commit(ctx)
-}
-
-// AddInventoryItemsBatch 批量添加物品到背包
-func (db *DB) AddInventoryItemsBatch(ctx context.Context, items []*InventoryItem) error {
+// AddInventoryItemsBatchInTx 批量添加物品到背包
+func (db *DB) AddInventoryItemsBatchInTx(ctx context.Context, tx pgx.Tx, items []*InventoryItem) error {
 	if len(items) == 0 {
 		return nil
 	}
-
-	// 开始事务
-	tx, err := db.GetPool().Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
 
 	// 为了提高效率，先批量查询现有物品
 	userItemMap := make(map[int]map[string]*InventoryItem)
@@ -111,7 +87,7 @@ func (db *DB) AddInventoryItemsBatch(ctx context.Context, items []*InventoryItem
 
 	// 批量插入新物品
 	if len(itemsToInsert) > 0 {
-		err = db.batchInsertInventoryItems(ctx, tx, itemsToInsert)
+		err := db.batchInsertInventoryItems(ctx, tx, itemsToInsert)
 		if err != nil {
 			return err
 		}
@@ -119,7 +95,7 @@ func (db *DB) AddInventoryItemsBatch(ctx context.Context, items []*InventoryItem
 
 	// 批量更新现有物品数量
 	if len(itemsToUpdate) > 0 {
-		err = db.batchUpdateInventoryItemQuantity(ctx, tx, itemsToUpdate)
+		err := db.batchUpdateInventoryItemQuantity(ctx, tx, itemsToUpdate)
 		if err != nil {
 			return err
 		}
@@ -127,14 +103,13 @@ func (db *DB) AddInventoryItemsBatch(ctx context.Context, items []*InventoryItem
 
 	// 批量删除物品
 	if len(itemsToDelete) > 0 {
-		err = db.batchDeleteInventoryItems(ctx, tx, itemsToDelete)
+		err := db.batchDeleteInventoryItems(ctx, tx, itemsToDelete)
 		if err != nil {
 			return err
 		}
 	}
 
-	// 提交事务
-	return tx.Commit(ctx)
+	return nil
 }
 
 // getInventoryItemsByNamesInTx 在事务中批量查询物品

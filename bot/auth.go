@@ -22,7 +22,7 @@ func Auth(db *database.DB, b *tele.Bot) tele.MiddlewareFunc {
 					TgId:                userId,
 					Username:            c.Sender().Username,
 					CreatedAt:           time.Now(),
-					TotalRechargedToken: 10000000,
+					TotalRechargedToken: 100000,
 					TotalUsedToken:      0,
 					SystemPrompt:        "",
 				}

@@ -158,10 +158,70 @@ func UpdateInventory(db *database.DB, userID int, args map[string]any) (string, 
 	if err := json.Unmarshal(argsJSON, &updateParams); err != nil {
 		return "", fmt.Errorf("解析更新参数失败: %v", err)
 	}
+	for _, item := range updateParams {
+		item.UserID = userID
+	}
+	tx, err := db.GetPool().Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("开始事务失败: %v", err)
+	}
+	defer tx.Rollback(ctx)
 
 	// 调用部分更新方法
-	if err := db.UpdateInventory(ctx, userID, updateParams); err != nil {
+	if err := db.AddInventoryItemsBatchInTx(ctx, tx, updateParams); err != nil {
 		return "", fmt.Errorf("更新背包物品失败: %v", err)
+	}
+
+	return "背包物品更新成功", tx.Commit(ctx)
+}
+
+func InAppPurchase(db *database.DB, userID int, args map[string]any) (string, error) {
+	ctx := context.Background()
+
+	// 解析JSON参数到部分更新结构体
+	var updateParams []*database.InventoryItem
+	fmt.Println("argsJSON", args)
+	var cost = int64(args["cost"].(float64))
+	if cost <= 0 {
+		return "", fmt.Errorf("灵石数量不能小于等于0")
+	}
+	totalToken, err := db.GetUserTotalToken(ctx, userID)
+	if err != nil {
+		return "", fmt.Errorf("获取用户现有灵石数失败: %v", err)
+	}
+	if totalToken < cost {
+		return "", fmt.Errorf("灵石余额不足")
+	}
+	argsJSON, err := json.Marshal(args["items"])
+	if err != nil {
+		return "", fmt.Errorf("解析更新参数失败: %v", err)
+	}
+	if err := json.Unmarshal(argsJSON, &updateParams); err != nil {
+		return "", fmt.Errorf("解析更新参数失败: %v", err)
+	}
+	for _, item := range updateParams {
+		item.UserID = userID
+	}
+	// 事务处理扣除灵石和更新背包
+	tx, err := db.GetPool().Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("开始事务失败: %v", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// 扣除灵石（使用事务版本）
+	if err := db.UpdateUserTotalUsedTokenTx(ctx, tx, userID, cost); err != nil {
+		return "", fmt.Errorf("扣除灵石失败: %v", err)
+	}
+
+	// 更新背包物品（使用事务版本）
+	if err := db.AddInventoryItemsBatchInTx(ctx, tx, updateParams); err != nil {
+		return "", fmt.Errorf("更新背包物品失败: %v", err)
+	}
+
+	// 提交事务
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("提交事务失败: %v", err)
 	}
 
 	return "背包物品更新成功", nil
